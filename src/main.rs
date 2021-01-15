@@ -1,3 +1,5 @@
+mod jobobjects;
+
 use clap::{App, Arg, SubCommand};
 use serde_derive::Deserialize;
 use shared_child::SharedChild;
@@ -13,8 +15,7 @@ use std::{
 };
 use winapi::{
     shared::minwindef,
-    shared::ntdef,
-    um::{errhandlingapi, handleapi, jobapi2, minwinbase, processenv, processthreadsapi, winbase, winnt},
+    um::{errhandlingapi, processenv, winbase}, 
 };
 use windows_service::{
     service::{ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceState, ServiceType},
@@ -22,9 +23,13 @@ use windows_service::{
     service_manager::{ServiceManager, ServiceManagerAccess},
 };
 
+#[derive(Deserialize, Debug)]
+struct JobObjectConfig {
+    priority_class: Option<jobobjects::PriorityClass>,
+}
+
 #[derive(Deserialize)]
 #[derive(Debug)]
-#[derive(Clone)]
 struct Config {
     name: String,
     display_name: String,
@@ -34,50 +39,13 @@ struct Config {
     output_dir: Option<PathBuf>,
     environment: Option<collections::HashMap<String, String>>,
     working_directory: Option<PathBuf>,
+    job_object: Option<JobObjectConfig>,
     // config relative to winsvc path
     // user binary relative to config path
     // configure job object
     // pid file
     // logging
     // console creation
-}
-
-struct JobObject {
-    handle: ntdef::HANDLE,
-}
-
-impl JobObject {
-    fn new() -> Result<Self, std::io::Error> {
-        let handle = unsafe { jobapi2::CreateJobObjectW(0 as minwinbase::LPSECURITY_ATTRIBUTES, 0 as ntdef::LPCWSTR) };
-        if handle == 0 as ntdef::HANDLE {
-            return Err(std::io::Error::last_os_error());
-        }
-        Ok(JobObject{handle: handle})
-    }
-
-    fn set_kill_on_close(&self) -> Result<(), std::io::Error> {
-        let mut info: winnt::JOBOBJECT_EXTENDED_LIMIT_INFORMATION = Default::default();
-        info.BasicLimitInformation.LimitFlags |= winnt::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        let result = unsafe {jobapi2::SetInformationJobObject(self.handle, winnt::JobObjectExtendedLimitInformation, &mut info as *mut _ as minwindef::LPVOID, std::mem::size_of_val(&info) as u32) };
-        if result == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        Ok(())
-    }
-
-    fn add_self(&self) -> Result<(), std::io::Error> {
-        let result = unsafe { jobapi2::AssignProcessToJobObject(self.handle, processthreadsapi::GetCurrentProcess()) };
-        if result == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-        Ok(())
-    }
-}
-
-impl Drop for JobObject {
-    fn drop(&mut self) {
-        unsafe { handleapi::CloseHandle(self.handle) };
-    }
 }
 
 struct Service {
@@ -112,9 +80,18 @@ impl Service {
         let tx = Arc::new(tx);
         let handler = ServiceControlHandler::new(&tx);
         let status_handle = service_control_handler::register(&self.config.name, move |sc| handler.handle(sc))?;
-        let job = JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
-        job.set_kill_on_close().map_err(|err| windows_service::Error::Winapi(err))?;
+
+        let job = jobobjects::JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
+        let mut limits = jobobjects::ExtendedLimitInformation::new();
+        limits.set_kill_on_close();
+        if let Some(job_object_config) = &self.config.job_object {
+            if let Some(class) = &job_object_config.priority_class {
+                limits.set_priority_class(*class);
+            }
+        }
+        job.set_extended_limits(limits).map_err(|err| windows_service::Error::Winapi(err))?;
         job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
+
         let mut c = Command::new(&self.config.binary);
         if let Some(args) = &self.config.args {
             c.args(args); // args.iter().map(|s| OsString::from(s)).collect(),
@@ -126,6 +103,7 @@ impl Service {
             fs::create_dir_all(wd).map_err(|err| windows_service::Error::Winapi(err))?;
             c.current_dir(wd);
         }
+
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
         let child = Arc::new(child);
         let waiter_child = child.clone();
