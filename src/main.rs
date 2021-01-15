@@ -12,7 +12,8 @@ use std::{
 };
 use winapi::{
     shared::minwindef,
-    um::{errhandlingapi, processenv, winbase},
+    shared::ntdef,
+    um::{errhandlingapi, handleapi, jobapi2, minwinbase, processenv, processthreadsapi, winbase, winnt},
 };
 use windows_service::{
     service::{ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceState, ServiceType},
@@ -37,6 +38,44 @@ struct Config {
     // logging
     // console creation
     // working directory
+}
+
+struct JobObject {
+    handle: ntdef::HANDLE,
+}
+
+impl JobObject {
+    fn new() -> Result<Self, std::io::Error> {
+        let handle = unsafe { jobapi2::CreateJobObjectW(0 as minwinbase::LPSECURITY_ATTRIBUTES, 0 as ntdef::LPCWSTR) };
+        if handle == 0 as ntdef::HANDLE {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(JobObject{handle: handle})
+    }
+
+    fn set_kill_on_close(&self) -> Result<(), std::io::Error> {
+        let mut info: winnt::JOBOBJECT_EXTENDED_LIMIT_INFORMATION = Default::default();
+        info.BasicLimitInformation.LimitFlags |= winnt::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let result = unsafe {jobapi2::SetInformationJobObject(self.handle, winnt::JobObjectExtendedLimitInformation, &mut info as *mut _ as minwindef::LPVOID, std::mem::size_of_val(&info) as u32) };
+        if result == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+
+    fn add_self(&self) -> Result<(), std::io::Error> {
+        let result = unsafe { jobapi2::AssignProcessToJobObject(self.handle, processthreadsapi::GetCurrentProcess()) };
+        if result == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(())
+    }
+}
+
+impl Drop for JobObject {
+    fn drop(&mut self) {
+        unsafe { handleapi::CloseHandle(self.handle) };
+    }
 }
 
 struct Service {
@@ -75,11 +114,14 @@ impl Service {
             Some(v) => v.iter().map(|s| OsString::from(s)).collect(),
             None => Vec::new()
         };
+        let job = JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
+        job.set_kill_on_close().map_err(|err| windows_service::Error::Winapi(err))?;
+        job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
         let mut c = Command::new(&self.config.binary);
         c.args(args);
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
         let child = Arc::new(child);
-        let waiter_child =  child.clone();
+        let waiter_child = child.clone();
         println!("child started with pid {}", child.id());
         let (child_tx, child_rx) = crossbeam_channel::bounded(0);
         let _t = std::thread::spawn(move || {
@@ -227,8 +269,7 @@ fn main() {
         let f = fs::File::create("c:\\svc\\log.txt").expect("failed to open log file");
         set_stdio(&f).expect("failed to set stdio");
         let config = matches.value_of("config").expect("--config is required");
-        let c: Config =
-            toml::from_str(&fs::read_to_string(config).expect("failed to read config file")).unwrap();
+        let c: Config = toml::from_str(&fs::read_to_string(config).expect("failed to read config file")).unwrap();
         let name = c.name.clone();
         let s = Service::new(c);
         service_control::register_service(name, Box::new(move || s.run())).unwrap();

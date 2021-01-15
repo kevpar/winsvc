@@ -9,7 +9,7 @@ clap = "2.33"
 toml = "0.5"
 serde = "1.0"
 serde_derive = "1.0"
-winapi = { version = "0.3", features = ["winsvc", "debugapi", "jobapi2", "impl-default"] }
+winapi = { version = "0.3", features = ["winsvc", "debugapi", "jobapi2", "impl-default", "handleapi"] }
 windows-service = "0.3"
 once_cell = "1.5"
 shared_child = "0.3"
