@@ -2,6 +2,7 @@ use clap::{App, Arg, SubCommand};
 use serde_derive::Deserialize;
 use shared_child::SharedChild;
 use std::{
+    collections,
     ffi::OsString,
     fs,
     os::windows::io::AsRawHandle,
@@ -31,7 +32,7 @@ struct Config {
     binary: String,
     args: Option<Vec<String>>,
     output_dir: Option<PathBuf>,
-    // env vars
+    environment: Option<collections::HashMap<String, String>>,
     // binary relative to config path
     // configure job object
     // pid file
@@ -119,6 +120,9 @@ impl Service {
         job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
         let mut c = Command::new(&self.config.binary);
         c.args(args);
+        if let Some(env) = &self.config.environment {
+            c.envs(env);
+        }
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
         let child = Arc::new(child);
         let waiter_child = child.clone();
