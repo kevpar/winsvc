@@ -108,7 +108,7 @@ impl Service {
     fn run_inner(&self) -> windows_service::Result<()> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let tx = Arc::new(tx);
-        let handler = ServiceControlHandler::new(tx);
+        let handler = ServiceControlHandler::new(&tx);
         let status_handle = service_control_handler::register(&self.config.name, move |sc| handler.handle(sc))?;
         let args = match &self.config.args {
             Some(v) => v.iter().map(|s| OsString::from(s)).collect(),
@@ -129,18 +129,13 @@ impl Service {
             child_tx.send(true).unwrap();
         });
         Service::set_status(status_handle, ServiceState::Running, ServiceControlAccept::STOP)?;
-        let mut child_alive = true;
         loop {
             crossbeam_channel::select! {
                 recv(rx) -> msg => {
                     msg.unwrap();
                     println!("stop signal received");
                     Service::set_status(status_handle, ServiceState::StopPending, ServiceControlAccept::empty())?;
-                    if child_alive {
-                        println!("killing child");
-                        child.kill().unwrap();
-                        child_alive = false;
-                    }
+                    child.kill().unwrap();
                 },
                 recv(child_rx) -> msg => {
                     msg.unwrap();
@@ -158,7 +153,7 @@ struct ServiceControlHandler {
 }
 
 impl ServiceControlHandler {
-    fn new(chan: Arc<crossbeam_channel::Sender<bool>>) -> Self {
+    fn new(chan: &Arc<crossbeam_channel::Sender<bool>>) -> Self {
         ServiceControlHandler{chan: chan.clone()}
     }
 
