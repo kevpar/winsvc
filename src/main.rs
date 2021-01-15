@@ -33,12 +33,13 @@ struct Config {
     args: Option<Vec<String>>,
     output_dir: Option<PathBuf>,
     environment: Option<collections::HashMap<String, String>>,
-    // binary relative to config path
+    working_directory: Option<PathBuf>,
+    // config relative to winsvc path
+    // user binary relative to config path
     // configure job object
     // pid file
     // logging
     // console creation
-    // working directory
 }
 
 struct JobObject {
@@ -111,17 +112,19 @@ impl Service {
         let tx = Arc::new(tx);
         let handler = ServiceControlHandler::new(&tx);
         let status_handle = service_control_handler::register(&self.config.name, move |sc| handler.handle(sc))?;
-        let args = match &self.config.args {
-            Some(v) => v.iter().map(|s| OsString::from(s)).collect(),
-            None => Vec::new()
-        };
         let job = JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
         job.set_kill_on_close().map_err(|err| windows_service::Error::Winapi(err))?;
         job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
         let mut c = Command::new(&self.config.binary);
-        c.args(args);
+        if let Some(args) = &self.config.args {
+            c.args(args); // args.iter().map(|s| OsString::from(s)).collect(),
+        }
         if let Some(env) = &self.config.environment {
             c.envs(env);
+        }
+        if let Some(wd) = &self.config.working_directory {
+            fs::create_dir_all(wd).map_err(|err| windows_service::Error::Winapi(err))?;
+            c.current_dir(wd);
         }
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
         let child = Arc::new(child);
