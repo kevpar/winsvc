@@ -1,14 +1,12 @@
 mod jobobjects;
+mod config;
 
 use clap::{App, Arg, SubCommand};
-use serde_derive::Deserialize;
 use shared_child::SharedChild;
 use std::{
-    collections,
     ffi::OsString,
     fs,
     os::windows::io::AsRawHandle,
-    path::{PathBuf},
     process::Command,
     sync::Arc,
     time::Duration,
@@ -23,37 +21,12 @@ use windows_service::{
     service_manager::{ServiceManager, ServiceManagerAccess},
 };
 
-#[derive(Deserialize, Debug)]
-struct JobObjectConfig {
-    priority_class: Option<jobobjects::PriorityClass>,
-}
-
-#[derive(Deserialize)]
-#[derive(Debug)]
-struct Config {
-    name: String,
-    display_name: String,
-    description: Option<String>,
-    binary: String,
-    args: Option<Vec<String>>,
-    output_dir: Option<PathBuf>,
-    environment: Option<collections::HashMap<String, String>>,
-    working_directory: Option<PathBuf>,
-    job_object: Option<JobObjectConfig>,
-    // config relative to winsvc path
-    // user binary relative to config path
-    // configure job object
-    // pid file
-    // logging
-    // console creation
-}
-
 struct Service {
-    config: Config,
+    config: config::Config,
 }
 
 impl Service {
-    fn new(config: Config) -> Self {
+    fn new(config: config::Config) -> Self {
         Service{
             config: config,
         }
@@ -79,7 +52,7 @@ impl Service {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let tx = Arc::new(tx);
         let handler = ServiceControlHandler::new(&tx);
-        let status_handle = service_control_handler::register(&self.config.name, move |sc| handler.handle(sc))?;
+        let status_handle = service_control_handler::register(&self.config.registration.name, move |sc| handler.handle(sc))?;
 
         let job = jobobjects::JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
@@ -92,14 +65,14 @@ impl Service {
         job.set_extended_limits(limits).map_err(|err| windows_service::Error::Winapi(err))?;
         job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
 
-        let mut c = Command::new(&self.config.binary);
-        if let Some(args) = &self.config.args {
+        let mut c = Command::new(&self.config.process.binary);
+        if let Some(args) = &self.config.process.args {
             c.args(args); // args.iter().map(|s| OsString::from(s)).collect(),
         }
-        if let Some(env) = &self.config.environment {
+        if let Some(env) = &self.config.process.environment {
             c.envs(env);
         }
-        if let Some(wd) = &self.config.working_directory {
+        if let Some(wd) = &self.config.process.working_directory {
             fs::create_dir_all(wd).map_err(|err| windows_service::Error::Winapi(err))?;
             c.current_dir(wd);
         }
@@ -222,7 +195,7 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches("register") {
         let config = matches.value_of("config").expect("--config is required");
-        let c: Config =
+        let c: config::Config =
             toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
                 .expect("config failed to parse");
         let scm = ServiceManager::local_computer(
@@ -230,8 +203,8 @@ fn main() {
             ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
         ).unwrap();
         let info = ServiceInfo {
-            name: OsString::from(&c.name),
-            display_name: OsString::from(&c.display_name),
+            name: OsString::from(&c.registration.name),
+            display_name: OsString::from(&c.registration.display_name),
             service_type: ServiceType::OWN_PROCESS,
             start_type: ServiceStartType::AutoStart,
             error_control: ServiceErrorControl::Normal,
@@ -242,15 +215,15 @@ fn main() {
             account_password: None,
         };
         let service = scm.create_service(&info, ServiceAccess::CHANGE_CONFIG).unwrap();
-        if let Some(desc) = c.description {
+        if let Some(desc) = c.registration.description {
             service.set_description(desc).unwrap()
         }
     } else if let Some(matches) = matches.subcommand_matches("run") {
         let f = fs::File::create("c:\\svc\\log.txt").expect("failed to open log file");
         set_stdio(&f).expect("failed to set stdio");
         let config = matches.value_of("config").expect("--config is required");
-        let c: Config = toml::from_str(&fs::read_to_string(config).expect("failed to read config file")).unwrap();
-        let name = c.name.clone();
+        let c: config::Config = toml::from_str(&fs::read_to_string(config).expect("failed to read config file")).unwrap();
+        let name = c.registration.name.clone();
         let s = Service::new(c);
         service_control::register_service(name, Box::new(move || s.run())).unwrap();
         service_control::dispatch_service().unwrap();
