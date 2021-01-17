@@ -5,7 +5,7 @@ use clap::{App, Arg, SubCommand};
 use shared_child::SharedChild;
 use std::{
     ffi::OsString,
-    fs,
+    fs::{self, OpenOptions},
     os::windows::io::AsRawHandle,
     process::Command,
     sync::Arc,
@@ -67,7 +67,7 @@ impl Service {
 
         let mut c = Command::new(&self.config.process.binary);
         if let Some(args) = &self.config.process.args {
-            c.args(args); // args.iter().map(|s| OsString::from(s)).collect(),
+            c.args(args);
         }
         if let Some(env) = &self.config.process.environment {
             c.envs(env);
@@ -75,6 +75,50 @@ impl Service {
         if let Some(wd) = &self.config.process.working_directory {
             fs::create_dir_all(wd).map_err(|err| windows_service::Error::Winapi(err))?;
             c.current_dir(wd);
+        }
+        if let Some(stdout) = &self.config.process.stdout {
+            match stdout {
+                config::OutputStream::Null => { c.stdout(std::process::Stdio::null()); },
+                config::OutputStream::File{ path, exist_behavior } => {
+                    let mut oo = OpenOptions::new();
+                    oo.write(true);
+                    oo.create(true);
+                    if let Some(eb) = exist_behavior {
+                        match eb {
+                            config::ExistBehavior::Append => { oo.append(true); },
+                            config::ExistBehavior::Truncate => { oo.truncate(true); },
+                        }
+                    } else {
+                        oo.append(true);
+                    }
+                    let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
+                    c.stdout(f);
+                },
+            }
+        } else {
+            c.stdout(std::process::Stdio::null());
+        }
+        if let Some(stderr) = &self.config.process.stderr {
+            match stderr {
+                config::OutputStream::Null => { c.stdout(std::process::Stdio::null()); },
+                config::OutputStream::File{ path, exist_behavior } => {
+                    let mut oo = OpenOptions::new();
+                    oo.write(true);
+                    oo.create(true);
+                    if let Some(eb) = exist_behavior {
+                        match eb {
+                            config::ExistBehavior::Append => { oo.append(true); },
+                            config::ExistBehavior::Truncate => { oo.truncate(true); },
+                        }
+                    } else {
+                        oo.append(true);
+                    }
+                    let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
+                    c.stderr(f);
+                },
+            }
+        } else {
+            c.stderr(std::process::Stdio::null());
         }
 
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
@@ -223,6 +267,7 @@ fn main() {
         set_stdio(&f).expect("failed to set stdio");
         let config = matches.value_of("config").expect("--config is required");
         let c: config::Config = toml::from_str(&fs::read_to_string(config).expect("failed to read config file")).unwrap();
+        println!("config: {:?}", c);
         let name = c.registration.name.clone();
         let s = Service::new(c);
         service_control::register_service(name, Box::new(move || s.run())).unwrap();

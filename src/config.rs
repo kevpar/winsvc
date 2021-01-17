@@ -19,11 +19,27 @@ pub struct Registration {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum ExistBehavior {
+    Append,
+    Truncate,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "type")]
+pub enum OutputStream {
+    Null,
+    File { path: PathBuf, exist_behavior: Option<ExistBehavior> },
+}
+
+#[derive(Deserialize, Debug)]
 pub struct Process {
     pub binary: String,
     pub args: Option<Vec<String>>,
     pub working_directory: Option<PathBuf>,
     pub environment: Option<collections::HashMap<String, String>>,
+    pub stdout: Option<OutputStream>,
+    pub stderr: Option<OutputStream>,
 }
 
 #[derive(Deserialize, Debug)]

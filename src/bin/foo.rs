@@ -7,6 +7,7 @@ fn main() {
             Ok(v) => v,
             Err(_) => "<error>".to_string(),
         });
+        eprintln!("stderr!");
         thread::sleep(time::Duration::from_secs(1));
     }
 }
