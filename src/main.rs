@@ -48,6 +48,23 @@ impl Service {
         self.run_inner().unwrap();
     }
 
+    fn output_stream(config: &config::OutputStream) -> windows_service::Result<std::process::Stdio> {
+        match config {
+            config::OutputStream::Null => Ok(std::process::Stdio::null()),
+            config::OutputStream::File{ path, exist_behavior } => {
+                let mut oo = OpenOptions::new();
+                oo.write(true);
+                oo.create(true);
+                match exist_behavior {
+                    config::ExistBehavior::Append => { oo.append(true); },
+                    config::ExistBehavior::Truncate => { oo.truncate(true); },
+                }
+                let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
+                Ok(Into::into(f))
+            },
+        }
+    }
+
     fn run_inner(&self) -> windows_service::Result<()> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let tx = Arc::new(tx);
@@ -72,34 +89,8 @@ impl Service {
             fs::create_dir_all(wd).map_err(|err| windows_service::Error::Winapi(err))?;
             c.current_dir(wd);
         }
-        match &self.config.process.stdout {
-            config::OutputStream::Null => { c.stdout(std::process::Stdio::null()); },
-            config::OutputStream::File{ path, exist_behavior } => {
-                let mut oo = OpenOptions::new();
-                oo.write(true);
-                oo.create(true);
-                match exist_behavior {
-                    config::ExistBehavior::Append => { oo.append(true); },
-                    config::ExistBehavior::Truncate => { oo.truncate(true); },
-                }
-                let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
-                c.stdout(f);
-            },
-        }
-        match &self.config.process.stderr {
-            config::OutputStream::Null => { c.stderr(std::process::Stdio::null()); },
-            config::OutputStream::File{ path, exist_behavior } => {
-                let mut oo = OpenOptions::new();
-                oo.write(true);
-                oo.create(true);
-                match exist_behavior {
-                    config::ExistBehavior::Append => { oo.append(true); },
-                    config::ExistBehavior::Truncate => { oo.truncate(true); },
-                }
-                let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
-                c.stderr(f);
-            },
-        }
+        c.stdout(Service::output_stream(&self.config.process.stdout)?);
+        c.stderr(Service::output_stream(&self.config.process.stderr)?);
 
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
         let child = Arc::new(child);
