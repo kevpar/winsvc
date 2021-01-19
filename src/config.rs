@@ -1,10 +1,8 @@
 use crate::jobobjects;
 
 use serde_derive::Deserialize;
-use std::{
-    collections,
-    path::{PathBuf},
-};
+use std::collections;
+use std::path::PathBuf;
 
 #[derive(Deserialize, Debug)]
 pub struct JobObject {
@@ -25,21 +23,41 @@ pub enum ExistBehavior {
     Truncate,
 }
 
+impl Default for ExistBehavior {
+    fn default() -> Self {
+        ExistBehavior::Append
+    }
+}
+
 #[derive(Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum OutputStream {
     Null,
-    File { path: PathBuf, exist_behavior: Option<ExistBehavior> },
+    File {
+        path: PathBuf,
+        #[serde(default)]
+        exist_behavior: ExistBehavior
+    },
+}
+
+impl Default for OutputStream {
+    fn default() -> Self {
+        OutputStream::Null
+    }
 }
 
 #[derive(Deserialize, Debug)]
 pub struct Process {
     pub binary: String,
-    pub args: Option<Vec<String>>,
+    #[serde(default)]
+    pub args: Vec<String>,
     pub working_directory: Option<PathBuf>,
-    pub environment: Option<collections::HashMap<String, String>>,
-    pub stdout: Option<OutputStream>,
-    pub stderr: Option<OutputStream>,
+    #[serde(default)]
+    pub environment: collections::HashMap<String, String>,
+    #[serde(default)]
+    pub stdout: OutputStream,
+    #[serde(default)]
+    pub stderr: OutputStream,
 }
 
 #[derive(Deserialize, Debug)]

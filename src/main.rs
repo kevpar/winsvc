@@ -66,59 +66,39 @@ impl Service {
         job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
 
         let mut c = Command::new(&self.config.process.binary);
-        if let Some(args) = &self.config.process.args {
-            c.args(args);
-        }
-        if let Some(env) = &self.config.process.environment {
-            c.envs(env);
-        }
+        c.args(&self.config.process.args);
+        c.envs(&self.config.process.environment);
         if let Some(wd) = &self.config.process.working_directory {
             fs::create_dir_all(wd).map_err(|err| windows_service::Error::Winapi(err))?;
             c.current_dir(wd);
         }
-        if let Some(stdout) = &self.config.process.stdout {
-            match stdout {
-                config::OutputStream::Null => { c.stdout(std::process::Stdio::null()); },
-                config::OutputStream::File{ path, exist_behavior } => {
-                    let mut oo = OpenOptions::new();
-                    oo.write(true);
-                    oo.create(true);
-                    if let Some(eb) = exist_behavior {
-                        match eb {
-                            config::ExistBehavior::Append => { oo.append(true); },
-                            config::ExistBehavior::Truncate => { oo.truncate(true); },
-                        }
-                    } else {
-                        oo.append(true);
-                    }
-                    let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
-                    c.stdout(f);
-                },
-            }
-        } else {
-            c.stdout(std::process::Stdio::null());
+        match &self.config.process.stdout {
+            config::OutputStream::Null => { c.stdout(std::process::Stdio::null()); },
+            config::OutputStream::File{ path, exist_behavior } => {
+                let mut oo = OpenOptions::new();
+                oo.write(true);
+                oo.create(true);
+                match exist_behavior {
+                    config::ExistBehavior::Append => { oo.append(true); },
+                    config::ExistBehavior::Truncate => { oo.truncate(true); },
+                }
+                let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
+                c.stdout(f);
+            },
         }
-        if let Some(stderr) = &self.config.process.stderr {
-            match stderr {
-                config::OutputStream::Null => { c.stdout(std::process::Stdio::null()); },
-                config::OutputStream::File{ path, exist_behavior } => {
-                    let mut oo = OpenOptions::new();
-                    oo.write(true);
-                    oo.create(true);
-                    if let Some(eb) = exist_behavior {
-                        match eb {
-                            config::ExistBehavior::Append => { oo.append(true); },
-                            config::ExistBehavior::Truncate => { oo.truncate(true); },
-                        }
-                    } else {
-                        oo.append(true);
-                    }
-                    let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
-                    c.stderr(f);
-                },
-            }
-        } else {
-            c.stderr(std::process::Stdio::null());
+        match &self.config.process.stderr {
+            config::OutputStream::Null => { c.stderr(std::process::Stdio::null()); },
+            config::OutputStream::File{ path, exist_behavior } => {
+                let mut oo = OpenOptions::new();
+                oo.write(true);
+                oo.create(true);
+                match exist_behavior {
+                    config::ExistBehavior::Append => { oo.append(true); },
+                    config::ExistBehavior::Truncate => { oo.truncate(true); },
+                }
+                let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
+                c.stderr(f);
+            },
         }
 
         let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
