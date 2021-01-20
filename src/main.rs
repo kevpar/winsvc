@@ -67,8 +67,7 @@ impl Service {
 
     fn run_inner(&self) -> windows_service::Result<()> {
         let (tx, rx) = crossbeam_channel::bounded(0);
-        let tx = Arc::new(tx);
-        let handler = ServiceControlHandler::new(&tx);
+        let handler = ServiceControlHandler::new(tx.clone());
         let status_handle = service_control_handler::register(&self.config.registration.name, move |sc| handler.handle(sc))?;
 
         let job = jobobjects::JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
@@ -99,7 +98,7 @@ impl Service {
         let (child_tx, child_rx) = crossbeam_channel::bounded(0);
         let _t = std::thread::spawn(move || {
             waiter_child.wait().unwrap();
-            child_tx.send(true).unwrap();
+            child_tx.send(()).unwrap();
         });
         Service::set_status(status_handle, ServiceState::Running, ServiceControlAccept::STOP)?;
         loop {
@@ -122,19 +121,19 @@ impl Service {
 }
 
 struct ServiceControlHandler {
-    chan: Arc<crossbeam_channel::Sender<bool>>,
+    chan: crossbeam_channel::Sender<()>,
 }
 
 impl ServiceControlHandler {
-    fn new(chan: &Arc<crossbeam_channel::Sender<bool>>) -> Self {
-        ServiceControlHandler{chan: chan.clone()}
+    fn new(chan: crossbeam_channel::Sender<()>) -> Self {
+        ServiceControlHandler{chan}
     }
 
     fn handle(&self, sc: ServiceControl) -> ServiceControlHandlerResult {
         match sc {
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
             ServiceControl::Stop => {
-                self.chan.send(true).unwrap();
+                self.chan.send(()).unwrap();
                 ServiceControlHandlerResult::NoError
             }
             _ => ServiceControlHandlerResult::NotImplemented
