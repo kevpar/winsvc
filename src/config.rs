@@ -61,10 +61,17 @@ pub struct Process {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct WinSvcConfig {
+    #[serde(default)]
+    pub output: OutputStream,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct Config {
     pub registration: Registration,
     pub process: Process,
     pub job_object: Option<JobObject>,
+    pub winsvc: Option<WinSvcConfig>,
     // config relative to winsvc path
     // user binary relative to config path
     // pid file

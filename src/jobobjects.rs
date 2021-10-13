@@ -48,7 +48,7 @@ impl JobObject {
     }
 
     pub fn set_extended_limits(&self, mut limits: ExtendedLimitInformation) -> Result<(), std::io::Error> {
-        let result = unsafe {jobapi2::SetInformationJobObject(self.handle, winnt::JobObjectExtendedLimitInformation, &mut limits.0 as *mut _ as minwindef::LPVOID, std::mem::size_of_val(&limits) as u32) };
+        let result = unsafe { jobapi2::SetInformationJobObject(self.handle, winnt::JobObjectExtendedLimitInformation, &mut limits.0 as *mut _ as minwindef::LPVOID, std::mem::size_of_val(&limits) as u32) };
         if result == 0 {
             return Err(std::io::Error::last_os_error());
         }
