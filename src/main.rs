@@ -1,5 +1,5 @@
-mod jobobjects;
 mod config;
+mod jobobjects;
 
 use clap::{App, Arg, SubCommand};
 use shared_child::SharedChild;
@@ -13,10 +13,13 @@ use std::{
 };
 use winapi::{
     shared::minwindef,
-    um::{errhandlingapi, processenv, winbase}, 
+    um::{errhandlingapi, processenv, winbase},
 };
 use windows_service::{
-    service::{ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceState, ServiceType},
+    service::{
+        ServiceAccess, ServiceControl, ServiceControlAccept, ServiceErrorControl, ServiceInfo,
+        ServiceStartType, ServiceState, ServiceType,
+    },
     service_control_handler::{self, ServiceControlHandlerResult, ServiceStatusHandle},
     service_manager::{ServiceManager, ServiceManagerAccess},
 };
@@ -27,12 +30,14 @@ struct Service {
 
 impl Service {
     fn new(config: config::Config) -> Self {
-        Service{
-            config: config,
-        }
+        Service { config: config }
     }
 
-    fn set_status(status_handle: ServiceStatusHandle, status: ServiceState, controls_accepted: ServiceControlAccept) -> windows_service::Result<()> {
+    fn set_status(
+        status_handle: ServiceStatusHandle,
+        status: ServiceState,
+        controls_accepted: ServiceControlAccept,
+    ) -> windows_service::Result<()> {
         status_handle.set_service_status(windows_service::service::ServiceStatus {
             service_type: windows_service::service::ServiceType::OWN_PROCESS,
             current_state: status,
@@ -48,29 +53,44 @@ impl Service {
         self.run_inner().unwrap();
     }
 
-    fn output_stream(config: &config::OutputStream) -> windows_service::Result<std::process::Stdio> {
+    fn output_stream(
+        config: &config::OutputStream,
+    ) -> windows_service::Result<std::process::Stdio> {
         match config {
             config::OutputStream::Null => Ok(std::process::Stdio::null()),
-            config::OutputStream::File{ path, exist_behavior } => {
+            config::OutputStream::File {
+                path,
+                exist_behavior,
+            } => {
                 let mut oo = OpenOptions::new();
                 oo.write(true);
                 oo.create(true);
                 match exist_behavior {
-                    config::ExistBehavior::Append => { oo.append(true); },
-                    config::ExistBehavior::Truncate => { oo.truncate(true); },
+                    config::ExistBehavior::Append => {
+                        oo.append(true);
+                    }
+                    config::ExistBehavior::Truncate => {
+                        oo.truncate(true);
+                    }
                 }
-                let f = oo.open(path).map_err(|err| windows_service::Error::Winapi(err))?;
+                let f = oo
+                    .open(path)
+                    .map_err(|err| windows_service::Error::Winapi(err))?;
                 Ok(Into::into(f))
-            },
+            }
         }
     }
 
     fn run_inner(&self) -> windows_service::Result<()> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let handler = ServiceControlHandler::new(tx.clone());
-        let status_handle = service_control_handler::register(&self.config.registration.name, move |sc| handler.handle(sc))?;
+        let status_handle =
+            service_control_handler::register(&self.config.registration.name, move |sc| {
+                handler.handle(sc)
+            })?;
 
-        let job = jobobjects::JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
+        let job =
+            jobobjects::JobObject::new().map_err(|err| windows_service::Error::Winapi(err))?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
         limits.set_kill_on_close();
         if let Some(job_object_config) = &self.config.job_object {
@@ -78,8 +98,10 @@ impl Service {
                 limits.set_priority_class(*class);
             }
         }
-        job.set_extended_limits(limits).map_err(|err| windows_service::Error::Winapi(err))?;
-        job.add_self().map_err(|err| windows_service::Error::Winapi(err))?;
+        job.set_extended_limits(limits)
+            .map_err(|err| windows_service::Error::Winapi(err))?;
+        job.add_self()
+            .map_err(|err| windows_service::Error::Winapi(err))?;
 
         let mut c = Command::new(&self.config.process.binary);
         c.args(&self.config.process.args);
@@ -91,7 +113,8 @@ impl Service {
         c.stdout(Service::output_stream(&self.config.process.stdout)?);
         c.stderr(Service::output_stream(&self.config.process.stderr)?);
 
-        let child = SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
+        let child =
+            SharedChild::spawn(&mut c).map_err(|err| windows_service::Error::Winapi(err))?;
         let child = Arc::new(child);
         let waiter_child = child.clone();
         println!("child started with pid {}", child.id());
@@ -100,7 +123,11 @@ impl Service {
             waiter_child.wait().unwrap();
             child_tx.send(()).unwrap();
         });
-        Service::set_status(status_handle, ServiceState::Running, ServiceControlAccept::STOP)?;
+        Service::set_status(
+            status_handle,
+            ServiceState::Running,
+            ServiceControlAccept::STOP,
+        )?;
         loop {
             crossbeam_channel::select! {
                 recv(rx) -> msg => {
@@ -126,7 +153,7 @@ struct ServiceControlHandler {
 
 impl ServiceControlHandler {
     fn new(chan: crossbeam_channel::Sender<()>) -> Self {
-        ServiceControlHandler{chan}
+        ServiceControlHandler { chan }
     }
 
     fn handle(&self, sc: ServiceControl) -> ServiceControlHandlerResult {
@@ -136,7 +163,7 @@ impl ServiceControlHandler {
                 self.chan.send(()).unwrap();
                 ServiceControlHandlerResult::NoError
             }
-            _ => ServiceControlHandlerResult::NotImplemented
+            _ => ServiceControlHandlerResult::NotImplemented,
         }
     }
 }
@@ -155,10 +182,10 @@ fn set_stdio(f: &std::fs::File) -> Result<(), minwindef::DWORD> {
 }
 
 mod service_control {
+    use once_cell::sync::OnceCell;
     use std::boxed::Box;
     use std::ffi::OsString;
     use std::sync::Mutex;
-    use once_cell::sync::OnceCell;
     use windows_service::define_windows_service;
     use windows_service::service_dispatcher;
 
@@ -175,17 +202,19 @@ mod service_control {
         (SERVICE_RUNNER.get().unwrap().lock().unwrap().runner)();
     }
 
-    pub fn register_service(name: String, runner: Box<dyn FnMut() + Send>) -> Result<(), String>
-    {
-        SERVICE_RUNNER.set(Mutex::new(ServiceEntry{name, runner}))
+    pub fn register_service(name: String, runner: Box<dyn FnMut() + Send>) -> Result<(), String> {
+        SERVICE_RUNNER
+            .set(Mutex::new(ServiceEntry { name, runner }))
             .map_err(|_err| "Failed to register service".to_string())?;
         Ok(())
     }
 
     pub fn dispatch_service() -> Result<(), String> {
         let data = SERVICE_RUNNER
-            .get().ok_or("No service registered yet".to_string())?
-            .lock().map_err(|_err| "Failed to lock service entry".to_string())?;
+            .get()
+            .ok_or("No service registered yet".to_string())?
+            .lock()
+            .map_err(|_err| "Failed to lock service entry".to_string())?;
         let name = data.name.clone();
         drop(data);
         service_dispatcher::start(name, ffi_service_main)
@@ -196,7 +225,7 @@ mod service_control {
 fn main() {
     let matches = App::new("Windows Service Shim")
         .version("0.1")
-        .about("Helps run programs as Windows services in a sane way.")
+        .about("Adapts a console application to run as a Windows service.")
         .subcommand(
             SubCommand::with_name("run")
                 .arg(Arg::with_name("config").help("Path to the service config file")),
@@ -215,7 +244,8 @@ fn main() {
         let scm = ServiceManager::local_computer(
             None::<&str>,
             ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
-        ).unwrap();
+        )
+        .unwrap();
         let info = ServiceInfo {
             name: OsString::from(&c.registration.name),
             display_name: OsString::from(&c.registration.display_name),
@@ -228,7 +258,9 @@ fn main() {
             account_name: None,
             account_password: None,
         };
-        let service = scm.create_service(&info, ServiceAccess::CHANGE_CONFIG).unwrap();
+        let service = scm
+            .create_service(&info, ServiceAccess::CHANGE_CONFIG)
+            .unwrap();
         if let Some(desc) = c.registration.description {
             service.set_description(desc).unwrap()
         }
@@ -236,7 +268,9 @@ fn main() {
         let f = fs::File::create("c:\\svc\\log.txt").expect("failed to open log file");
         set_stdio(&f).expect("failed to set stdio");
         let config = matches.value_of("config").expect("--config is required");
-        let c: config::Config = toml::from_str(&fs::read_to_string(config).expect("failed to read config file")).unwrap();
+        let c: config::Config =
+            toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
+                .unwrap();
         println!("config: {:?}", c);
         let name = c.registration.name.clone();
         let s = Service::new(c);

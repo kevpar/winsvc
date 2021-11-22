@@ -36,7 +36,7 @@ pub enum OutputStream {
     File {
         path: PathBuf,
         #[serde(default)]
-        exist_behavior: ExistBehavior
+        exist_behavior: ExistBehavior,
     },
 }
 

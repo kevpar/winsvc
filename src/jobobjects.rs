@@ -40,15 +40,27 @@ pub struct JobObject {
 
 impl JobObject {
     pub fn new() -> Result<Self, std::io::Error> {
-        let handle = unsafe { jobapi2::CreateJobObjectW(0 as minwinbase::LPSECURITY_ATTRIBUTES, 0 as ntdef::LPCWSTR) };
+        let handle = unsafe {
+            jobapi2::CreateJobObjectW(0 as minwinbase::LPSECURITY_ATTRIBUTES, 0 as ntdef::LPCWSTR)
+        };
         if handle == 0 as ntdef::HANDLE {
             return Err(std::io::Error::last_os_error());
         }
-        Ok(JobObject{handle: handle})
+        Ok(JobObject { handle: handle })
     }
 
-    pub fn set_extended_limits(&self, mut limits: ExtendedLimitInformation) -> Result<(), std::io::Error> {
-        let result = unsafe {jobapi2::SetInformationJobObject(self.handle, winnt::JobObjectExtendedLimitInformation, &mut limits.0 as *mut _ as minwindef::LPVOID, std::mem::size_of_val(&limits) as u32) };
+    pub fn set_extended_limits(
+        &self,
+        mut limits: ExtendedLimitInformation,
+    ) -> Result<(), std::io::Error> {
+        let result = unsafe {
+            jobapi2::SetInformationJobObject(
+                self.handle,
+                winnt::JobObjectExtendedLimitInformation,
+                &mut limits.0 as *mut _ as minwindef::LPVOID,
+                std::mem::size_of_val(&limits) as u32,
+            )
+        };
         if result == 0 {
             return Err(std::io::Error::last_os_error());
         }
@@ -56,7 +68,9 @@ impl JobObject {
     }
 
     pub fn add_self(&self) -> Result<(), std::io::Error> {
-        let result = unsafe { jobapi2::AssignProcessToJobObject(self.handle, processthreadsapi::GetCurrentProcess()) };
+        let result = unsafe {
+            jobapi2::AssignProcessToJobObject(self.handle, processthreadsapi::GetCurrentProcess())
+        };
         if result == 0 {
             return Err(std::io::Error::last_os_error());
         }
