@@ -234,47 +234,58 @@ fn main() {
             SubCommand::with_name("register")
                 .arg(Arg::with_name("config").help("Path to the service config file")),
         )
+        .subcommand(SubCommand::with_name("config").subcommand(SubCommand::with_name("default")))
         .get_matches();
 
-    if let Some(matches) = matches.subcommand_matches("register") {
-        let config = matches.value_of("config").expect("--config is required");
-        let c: config::Config =
-            toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
-                .expect("config failed to parse");
-        let scm = ServiceManager::local_computer(
-            None::<&str>,
-            ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
-        )
-        .unwrap();
-        let info = ServiceInfo {
-            name: OsString::from(&c.registration.name),
-            display_name: OsString::from(&c.registration.display_name),
-            service_type: ServiceType::OWN_PROCESS,
-            start_type: ServiceStartType::AutoStart,
-            error_control: ServiceErrorControl::Normal,
-            executable_path: std::env::current_exe().unwrap(),
-            launch_arguments: vec![OsString::from("run"), OsString::from(config)],
-            dependencies: vec![],
-            account_name: None,
-            account_password: None,
-        };
-        let service = scm
-            .create_service(&info, ServiceAccess::CHANGE_CONFIG)
-            .unwrap();
-        if let Some(desc) = c.registration.description {
-            service.set_description(desc).unwrap()
+    match matches.subcommand() {
+        ("config", Some(matches)) => {
+            if let Some(_) = matches.subcommand_matches("default") {
+                let c = config::Config::default();
+                println!("{}", toml::to_string(&c).unwrap());
+            }
         }
-    } else if let Some(matches) = matches.subcommand_matches("run") {
-        let f = fs::File::create("c:\\svc\\log.txt").expect("failed to open log file");
-        set_stdio(&f).expect("failed to set stdio");
-        let config = matches.value_of("config").expect("--config is required");
-        let c: config::Config =
-            toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
+        ("register", Some(matches)) => {
+            let config = matches.value_of("config").expect("--config is required");
+            let c: config::Config =
+                toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
+                    .expect("config failed to parse");
+            let scm = ServiceManager::local_computer(
+                None::<&str>,
+                ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+            )
+            .unwrap();
+            let info = ServiceInfo {
+                name: OsString::from(&c.registration.name),
+                display_name: OsString::from(&c.registration.display_name),
+                service_type: ServiceType::OWN_PROCESS,
+                start_type: ServiceStartType::AutoStart,
+                error_control: ServiceErrorControl::Normal,
+                executable_path: std::env::current_exe().unwrap(),
+                launch_arguments: vec![OsString::from("run"), OsString::from(config)],
+                dependencies: vec![],
+                account_name: None,
+                account_password: None,
+            };
+            let service = scm
+                .create_service(&info, ServiceAccess::CHANGE_CONFIG)
                 .unwrap();
-        println!("config: {:?}", c);
-        let name = c.registration.name.clone();
-        let s = Service::new(c);
-        service_control::register_service(name, Box::new(move || s.run())).unwrap();
-        service_control::dispatch_service().unwrap();
+            if let Some(desc) = c.registration.description {
+                service.set_description(desc).unwrap()
+            }
+        }
+        ("run", Some(matches)) => {
+            let f = fs::File::create("c:\\svc\\log.txt").expect("failed to open log file");
+            set_stdio(&f).expect("failed to set stdio");
+            let config = matches.value_of("config").expect("--config is required");
+            let c: config::Config =
+                toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
+                    .unwrap();
+            println!("config: {:?}", c);
+            let name = c.registration.name.clone();
+            let s = Service::new(c);
+            service_control::register_service(name, Box::new(move || s.run())).unwrap();
+            service_control::dispatch_service().unwrap();
+        }
+        _ => {}
     }
 }

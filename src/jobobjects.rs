@@ -1,11 +1,11 @@
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 use winapi::{
     shared::minwindef,
     shared::ntdef,
     um::{handleapi, jobapi2, minwinbase, processthreadsapi, winbase, winnt},
 };
 
-#[derive(Deserialize, Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum PriorityClass {
     Idle = winbase::IDLE_PRIORITY_CLASS as isize,
     BelowNormal = winbase::BELOW_NORMAL_PRIORITY_CLASS as isize,

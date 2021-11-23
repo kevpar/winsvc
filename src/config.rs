@@ -1,22 +1,22 @@
 use crate::jobobjects;
 
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 use std::collections;
 use std::path::PathBuf;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 pub struct JobObject {
     pub priority_class: Option<jobobjects::PriorityClass>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Serialize)]
 pub struct Registration {
     pub name: String,
     pub display_name: String,
     pub description: Option<String>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 #[serde(tag = "type")]
 pub enum ExistBehavior {
     Append,
@@ -29,7 +29,7 @@ impl Default for ExistBehavior {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Serialize)]
 #[serde(tag = "type")]
 pub enum OutputStream {
     Null,
@@ -46,7 +46,7 @@ impl Default for OutputStream {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Serialize)]
 pub struct Process {
     pub binary: String,
     #[serde(default)]
@@ -60,7 +60,7 @@ pub struct Process {
     pub stderr: OutputStream,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Default, Serialize)]
 pub struct Config {
     pub registration: Registration,
     pub process: Process,
