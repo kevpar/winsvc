@@ -79,15 +79,20 @@ fn main() {
             }
         }
         ("run", Some(matches)) => {
-            let f = fs::File::create("c:\\svc\\log.txt").expect("failed to open log file");
-            set_stdio(&f).expect("failed to set stdio");
-            let config = matches.value_of("config").expect("--config is required");
-            let c: config::Config =
-                toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
-                    .unwrap();
-            println!("config: {:?}", c);
-            let name = c.registration.name.clone();
-            let s = svc::Service::new(c);
+            let config_path = matches.value_of("config").expect("--config is required");
+            let config: config::Config = toml::from_str(
+                &fs::read_to_string(config_path).expect("failed to read config file"),
+            )
+            .unwrap();
+            if let Some(winsvc_config) = &config.winsvc {
+                if let Some(path) = &winsvc_config.log_path {
+                    let f = fs::File::create(path).expect("failed to open log file");
+                    set_stdio(&f).expect("failed to set stdio");
+                }
+            }
+            println!("config: {:?}", config);
+            let name = config.registration.name.clone();
+            let s = svc::Service::new(config);
             service_control::register_service(name, Box::new(move || s.run())).unwrap();
             service_control::dispatch_service().unwrap();
         }

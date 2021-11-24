@@ -60,8 +60,14 @@ pub struct Process {
     pub stderr: OutputStream,
 }
 
+#[derive(Debug, Deserialize, Default, Serialize)]
+pub struct WinSvc {
+    pub log_path: Option<PathBuf>,
+}
+
 #[derive(Deserialize, Debug, Default, Serialize)]
 pub struct Config {
+    pub winsvc: Option<WinSvc>,
     pub registration: Registration,
     pub process: Process,
     pub job_object: Option<JobObject>,
