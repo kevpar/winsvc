@@ -1,7 +1,7 @@
 use crate::config;
 use crate::service_control;
 use crate::svc;
-use clap::{App, Arg, SubCommand};
+use clap::{Arg, Command};
 use std::{ffi::OsString, fs, os::windows::io::AsRawHandle};
 use winapi::{
     shared::minwindef,
@@ -26,28 +26,27 @@ fn set_stdio(f: &std::fs::File) -> Result<(), minwindef::DWORD> {
 }
 
 pub fn run() {
-    let matches = App::new("Windows Service Shim")
+    let matches = Command::new("Windows Service Shim")
         .version("0.1")
         .about("Adapts a console application to run as a Windows service.")
         .subcommand(
-            SubCommand::with_name("run")
-                .arg(Arg::with_name("config").help("Path to the service config file")),
+            Command::new("run").arg(Arg::new("config").help("Path to the service config file")),
         )
         .subcommand(
-            SubCommand::with_name("register")
-                .arg(Arg::with_name("config").help("Path to the service config file")),
+            Command::new("register")
+                .arg(Arg::new("config").help("Path to the service config file")),
         )
-        .subcommand(SubCommand::with_name("config").subcommand(SubCommand::with_name("default")))
+        .subcommand(Command::new("config").subcommand(Command::new("default")))
         .get_matches();
 
     match matches.subcommand() {
-        ("config", Some(matches)) => {
+        Some(("config", matches)) => {
             if let Some(_) = matches.subcommand_matches("default") {
                 let c = config::Config::default();
                 println!("{}", toml::to_string(&c).unwrap());
             }
         }
-        ("register", Some(matches)) => {
+        Some(("register", matches)) => {
             let config = matches.value_of("config").expect("--config is required");
             let c: config::Config =
                 toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
@@ -76,7 +75,7 @@ pub fn run() {
                 service.set_description(desc).unwrap()
             }
         }
-        ("run", Some(matches)) => {
+        Some(("run", matches)) => {
             let config_path = matches.value_of("config").expect("--config is required");
             let config: config::Config = toml::from_str(
                 &fs::read_to_string(config_path).expect("failed to read config file"),
