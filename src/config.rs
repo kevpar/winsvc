@@ -65,12 +65,37 @@ pub struct WinSvc {
     pub log_path: Option<PathBuf>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ActionType {
+    None,
+    Restart,
+}
+
+impl Default for ActionType {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+#[derive(Debug, Deserialize, Default, Serialize)]
+pub struct RestartAction {
+    pub action: ActionType,
+    pub delay: u32,
+}
+
+#[derive(Debug, Deserialize, Default, Serialize)]
+pub struct RestartBehavior {
+    pub reset_period: u32,
+    pub actions: Vec<RestartAction>,
+}
+
 #[derive(Deserialize, Debug, Default, Serialize)]
 pub struct Config {
     pub winsvc: Option<WinSvc>,
     pub registration: Registration,
     pub process: Process,
     pub job_object: Option<JobObject>,
+    pub restart: Option<RestartBehavior>,
     // config relative to winsvc path
     // user binary relative to config path
     // pid file
