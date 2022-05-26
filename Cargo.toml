@@ -3,6 +3,7 @@ name = "winsvc"
 version = "0.1.0"
 authors = ["Kevin Parsons <kevpar@microsoft.com>"]
 edition = "2018"
+description = "Utility to help run command-line programs as Windows services"
 
 [dependencies]
 clap = { version = "3.1", features = ["derive"] }

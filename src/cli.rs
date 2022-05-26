@@ -1,7 +1,7 @@
 use crate::config;
 use crate::service_control;
 use crate::svc;
-use clap::{Arg, Command};
+use clap::Parser;
 use std::{ffi::OsString, fs, os::windows::io::AsRawHandle};
 use winapi::{
     shared::minwindef,
@@ -25,31 +25,45 @@ fn set_stdio(f: &std::fs::File) -> Result<(), minwindef::DWORD> {
     Ok(())
 }
 
-pub fn run() {
-    let matches = Command::new("Windows Service Shim")
-        .version("0.1")
-        .about("Adapts a console application to run as a Windows service.")
-        .subcommand(
-            Command::new("run").arg(Arg::new("config").help("Path to the service config file")),
-        )
-        .subcommand(
-            Command::new("register")
-                .arg(Arg::new("config").help("Path to the service config file")),
-        )
-        .subcommand(Command::new("config").subcommand(Command::new("default")))
-        .get_matches();
+#[derive(clap::Parser)]
+#[clap(author, version, about, long_about = None)]
+struct Args {
+    #[clap(subcommand)]
+    command: Command,
+}
 
-    match matches.subcommand() {
-        Some(("config", matches)) => {
-            if let Some(_) = matches.subcommand_matches("default") {
-                let c = config::Config::default();
-                println!("{}", toml::to_string(&c).unwrap());
-            }
-        }
-        Some(("register", matches)) => {
-            let config = matches.value_of("config").expect("--config is required");
+#[derive(clap::Subcommand)]
+enum Command {
+    #[clap(about = "Register a service to run")]
+    Register {
+        #[clap(help = "Path to the service config file")]
+        config: String,
+    },
+    #[clap(about = "Run a service")]
+    Run {
+        #[clap(help = "Path to the service config file")]
+        config: String,
+    },
+    #[clap(about = "Interact with wind config files")]
+    Config {
+        #[clap(subcommand)]
+        command: ConfigCommand,
+    },
+}
+
+#[derive(clap::Subcommand)]
+enum ConfigCommand {
+    #[clap(about = "Output a config file with default settings")]
+    Default,
+}
+
+pub fn run() {
+    let args = Args::parse();
+
+    match args.command {
+        Command::Register { config } => {
             let c: config::Config =
-                toml::from_str(&fs::read_to_string(config).expect("failed to read config file"))
+                toml::from_str(&fs::read_to_string(&config).expect("failed to read config file"))
                     .expect("config failed to parse");
             let scm = ServiceManager::local_computer(
                 None::<&str>,
@@ -63,7 +77,7 @@ pub fn run() {
                 start_type: ServiceStartType::AutoStart,
                 error_control: ServiceErrorControl::Normal,
                 executable_path: std::env::current_exe().unwrap(),
-                launch_arguments: vec![OsString::from("run"), OsString::from(config)],
+                launch_arguments: vec![OsString::from("run"), OsString::from(&config)],
                 dependencies: vec![],
                 account_name: None,
                 account_password: None,
@@ -75,12 +89,10 @@ pub fn run() {
                 service.set_description(desc).unwrap()
             }
         }
-        Some(("run", matches)) => {
-            let config_path = matches.value_of("config").expect("--config is required");
-            let config: config::Config = toml::from_str(
-                &fs::read_to_string(config_path).expect("failed to read config file"),
-            )
-            .unwrap();
+        Command::Run { config } => {
+            let config: config::Config =
+                toml::from_str(&fs::read_to_string(&config).expect("failed to read config file"))
+                    .unwrap();
             if let Some(winsvc_config) = &config.winsvc {
                 if let Some(path) = &winsvc_config.log_path {
                     let f = fs::File::create(path).expect("failed to open log file");
@@ -93,6 +105,11 @@ pub fn run() {
             service_control::register_service(name, Box::new(move || s.run())).unwrap();
             service_control::dispatch_service().unwrap();
         }
-        _ => {}
+        Command::Config { command } => match command {
+            ConfigCommand::Default => {
+                let c = config::Config::default();
+                println!("{}", toml::to_string(&c).unwrap());
+            }
+        },
     }
 }
