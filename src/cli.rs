@@ -26,8 +26,8 @@ fn set_stdio(f: &std::fs::File) -> Result<(), minwindef::DWORD> {
 }
 
 #[derive(clap::Parser)]
-#[clap(author, version, about, long_about = None)]
-struct Args {
+#[clap(author, version, about)]
+struct Cli {
     #[clap(subcommand)]
     command: Command,
 }
@@ -37,14 +37,14 @@ enum Command {
     #[clap(about = "Register a service to run")]
     Register {
         #[clap(help = "Path to the service config file")]
-        config: String,
+        config: std::path::PathBuf,
     },
-    #[clap(about = "Run a service")]
+    #[clap(about = "Run a service", hide = true)]
     Run {
         #[clap(help = "Path to the service config file")]
-        config: String,
+        config: std::path::PathBuf,
     },
-    #[clap(about = "Interact with wind config files")]
+    #[clap(about = "Interact with config files")]
     Config {
         #[clap(subcommand)]
         command: ConfigCommand,
@@ -57,53 +57,62 @@ enum ConfigCommand {
     Default,
 }
 
-pub fn run() {
-    let args = Args::parse();
+fn read_config(path: &std::path::PathBuf) -> config::Config {
+    toml::from_str(&fs::read_to_string(path).expect("failed to read config file"))
+        .expect("failed to parse config file")
+}
 
-    match args.command {
+fn register_service(config: &config::Config, config_path: &std::path::PathBuf) {
+    let scm = ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    )
+    .unwrap();
+    let info = ServiceInfo {
+        name: OsString::from(&config.registration.name),
+        display_name: OsString::from(&config.registration.display_name),
+        service_type: ServiceType::OWN_PROCESS,
+        start_type: ServiceStartType::AutoStart,
+        error_control: ServiceErrorControl::Normal,
+        executable_path: std::env::current_exe().unwrap(),
+        launch_arguments: vec![OsString::from("run"), OsString::from(&config_path)],
+        dependencies: vec![],
+        account_name: None,
+        account_password: None,
+    };
+    let service = scm
+        .create_service(&info, ServiceAccess::CHANGE_CONFIG)
+        .unwrap();
+    if let Some(desc) = &config.registration.description {
+        service.set_description(desc).unwrap()
+    }
+}
+
+fn run_service(config: config::Config) {
+    if let Some(winsvc_config) = &config.winsvc {
+        if let Some(path) = &winsvc_config.log_path {
+            let f = fs::File::create(path).expect("failed to open log file");
+            set_stdio(&f).expect("failed to set stdio");
+        }
+    }
+    println!("config: {:?}", config);
+    let name = config.registration.name.clone();
+    let s = svc::Service::new(config);
+    service_control::register_service(name, Box::new(move || s.run())).unwrap();
+    service_control::dispatch_service().unwrap();
+}
+
+pub fn run() {
+    let cli = Cli::parse();
+
+    match cli.command {
         Command::Register { config } => {
-            let c: config::Config =
-                toml::from_str(&fs::read_to_string(&config).expect("failed to read config file"))
-                    .expect("config failed to parse");
-            let scm = ServiceManager::local_computer(
-                None::<&str>,
-                ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
-            )
-            .unwrap();
-            let info = ServiceInfo {
-                name: OsString::from(&c.registration.name),
-                display_name: OsString::from(&c.registration.display_name),
-                service_type: ServiceType::OWN_PROCESS,
-                start_type: ServiceStartType::AutoStart,
-                error_control: ServiceErrorControl::Normal,
-                executable_path: std::env::current_exe().unwrap(),
-                launch_arguments: vec![OsString::from("run"), OsString::from(&config)],
-                dependencies: vec![],
-                account_name: None,
-                account_password: None,
-            };
-            let service = scm
-                .create_service(&info, ServiceAccess::CHANGE_CONFIG)
-                .unwrap();
-            if let Some(desc) = c.registration.description {
-                service.set_description(desc).unwrap()
-            }
+            let c = read_config(&config);
+            register_service(&c, &config);
         }
         Command::Run { config } => {
-            let config: config::Config =
-                toml::from_str(&fs::read_to_string(&config).expect("failed to read config file"))
-                    .unwrap();
-            if let Some(winsvc_config) = &config.winsvc {
-                if let Some(path) = &winsvc_config.log_path {
-                    let f = fs::File::create(path).expect("failed to open log file");
-                    set_stdio(&f).expect("failed to set stdio");
-                }
-            }
-            println!("config: {:?}", config);
-            let name = config.registration.name.clone();
-            let s = svc::Service::new(config);
-            service_control::register_service(name, Box::new(move || s.run())).unwrap();
-            service_control::dispatch_service().unwrap();
+            let c = read_config(&config);
+            run_service(c);
         }
         Command::Config { command } => match command {
             ConfigCommand::Default => {
