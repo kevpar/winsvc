@@ -49,6 +49,10 @@ enum Command {
         #[clap(subcommand)]
         command: ConfigCommand,
     },
+    // TODO diag
+    // inspect (see child pid etc)
+    // something with sd notify protocol?
+    // rotate logs?
 }
 
 #[derive(clap::Subcommand)]
@@ -99,7 +103,7 @@ fn run_service(config: config::Config) {
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
     service_control::register_service(name, Box::new(move || s.run())).unwrap();
-    service_control::dispatch_service().unwrap();
+    service_control::start_dispatch().unwrap();
 }
 
 pub fn run() {

@@ -101,4 +101,5 @@ pub struct Config {
     // pid file
     // logging
     // console creation
+    // sd notify protocol
 }

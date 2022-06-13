@@ -70,6 +70,11 @@ impl Service {
         }
     }
 
+    // TODO remove notes
+    // service_control (winsvc?) provides all special bindings to tie to SCM
+    // svc provides core concept of a runnable service, receives some abstraction over control handling and setting service status
+    //   should be something we can pull out and test with a mock SCM
+
     fn run_inner(&self) -> windows_service::Result<()> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let handler = ServiceControlHandler::new(tx.clone());
