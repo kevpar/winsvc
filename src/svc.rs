@@ -1,27 +1,20 @@
 use crate::config;
 use crate::jobobjects;
+use crate::service_control;
 
 use shared_child::SharedChild;
 use std::{
     fs::{self, OpenOptions},
     process::Command,
     sync::Arc,
-    time::Duration,
 };
 
 // windows_service type aliases.
 // Maybe replace these with our own abstraction in the future.
 type Result<T> = windows_service::Result<T>;
 type Error = windows_service::Error;
-type ServiceStatusHandle = windows_service::service_control_handler::ServiceStatusHandle;
-type ServiceControlHandlerResult =
-    windows_service::service_control_handler::ServiceControlHandlerResult;
-type ServiceControl = windows_service::service::ServiceControl;
 type ServiceControlAccept = windows_service::service::ServiceControlAccept;
 type ServiceState = windows_service::service::ServiceState;
-type ServiceStatus = windows_service::service::ServiceStatus;
-type ServiceType = windows_service::service::ServiceType;
-type ServiceExitCode = windows_service::service::ServiceExitCode;
 
 pub struct Service {
     config: config::Config,
@@ -32,24 +25,11 @@ impl Service {
         Service { config: config }
     }
 
-    fn set_status(
-        status_handle: ServiceStatusHandle,
-        status: ServiceState,
-        controls_accepted: ServiceControlAccept,
-    ) -> Result<()> {
-        status_handle.set_service_status(ServiceStatus {
-            service_type: ServiceType::OWN_PROCESS,
-            current_state: status,
-            controls_accepted: controls_accepted,
-            exit_code: ServiceExitCode::Win32(0),
-            checkpoint: 0,
-            wait_hint: Duration::default(),
-            process_id: None,
-        })
-    }
-
     pub fn run(&self) {
-        self.run_inner().unwrap();
+        self.run_inner(
+            service_control::ServiceControlHandler::new(&self.config.registration.name).unwrap(),
+        )
+        .unwrap();
     }
 
     fn output_stream(config: &config::OutputStream) -> Result<std::process::Stdio> {
@@ -82,15 +62,12 @@ impl Service {
     //   should be something we can pull out and test with a mock SCM
     //
     // outer wrapper talks SCM concepts to SCM
-    // inner wrapper
+    //   ServiceControlHandler provides a way to receive events as well as synchronously set service status
+    // inner wrapper takes a ServiceControlHandler and provides a way to run some arbitrary code
+    // concrete implementation of inner wrapper uses this system to run a Windows service
 
-    fn run_inner(&self) -> Result<()> {
-        let (tx, rx) = crossbeam_channel::bounded(0);
-        let handler = ServiceControlHandler::new(tx.clone());
-        let status_handle = windows_service::service_control_handler::register(
-            &self.config.registration.name,
-            move |sc| handler.handle(sc),
-        )?;
+    fn run_inner(&self, handler: service_control::ServiceControlHandler) -> Result<()> {
+        let rx = handler.chan();
 
         let job = jobobjects::JobObject::new().map_err(|err| Error::Winapi(err))?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
@@ -123,47 +100,22 @@ impl Service {
             waiter_child.wait().unwrap();
             child_tx.send(()).unwrap();
         });
-        Service::set_status(
-            status_handle,
-            ServiceState::Running,
-            ServiceControlAccept::STOP,
-        )?;
+        handler.update(ServiceState::Running, ServiceControlAccept::STOP)?;
         loop {
             crossbeam_channel::select! {
                 recv(rx) -> msg => {
                     msg.unwrap();
                     println!("stop signal received");
-                    Service::set_status(status_handle, ServiceState::StopPending, ServiceControlAccept::empty())?;
+                    handler.update(ServiceState::StopPending, ServiceControlAccept::empty())?;
                     child.kill().unwrap();
                 },
                 recv(child_rx) -> msg => {
                     msg.unwrap();
                     println!("child terminated");
-                    Service::set_status(status_handle, ServiceState::Stopped, ServiceControlAccept::empty())?;
+                    handler.update(ServiceState::Stopped, ServiceControlAccept::empty())?;
                     return Ok(());
                 }
             }
-        }
-    }
-}
-
-struct ServiceControlHandler {
-    chan: crossbeam_channel::Sender<()>,
-}
-
-impl ServiceControlHandler {
-    fn new(chan: crossbeam_channel::Sender<()>) -> Self {
-        ServiceControlHandler { chan }
-    }
-
-    fn handle(&self, sc: ServiceControl) -> ServiceControlHandlerResult {
-        match sc {
-            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            ServiceControl::Stop => {
-                self.chan.send(()).unwrap();
-                ServiceControlHandlerResult::NoError
-            }
-            _ => ServiceControlHandlerResult::NotImplemented,
         }
     }
 }
