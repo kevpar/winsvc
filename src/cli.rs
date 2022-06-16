@@ -102,7 +102,7 @@ fn run_service(config: config::Config) {
     println!("config: {:?}", config);
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
-    service_control::register_service(name, Box::new(move || s.run())).unwrap();
+    service_control::register_service(name, Box::new(move |handler| s.run(handler))).unwrap();
     service_control::start_dispatch().unwrap();
 }
 

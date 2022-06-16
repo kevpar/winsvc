@@ -21,7 +21,7 @@ define_windows_service!(ffi_service_main, service_main);
 
 struct ServiceEntry {
     name: String,
-    runner: Box<dyn FnMut() + Send>,
+    runner: Box<dyn FnMut(ServiceControlHandler) + Send>,
 }
 
 /// Stores the global information needed to run the service.
@@ -29,12 +29,14 @@ struct ServiceEntry {
 static SERVICE_TABLE: OnceCell<Mutex<ServiceEntry>> = OnceCell::new();
 
 fn service_main(_args: Vec<OsString>) {
-    (SERVICE_TABLE.get().unwrap().lock().unwrap().runner)();
+    let mut s = SERVICE_TABLE.get().unwrap().lock().unwrap();
+    let handler = ServiceControlHandler::new(&s.name).unwrap();
+    (s.runner)(handler);
 }
 
 pub fn register_service(
     name: String,
-    runner: Box<dyn FnMut() + Send>,
+    runner: Box<dyn FnMut(ServiceControlHandler) + Send>,
 ) -> std::result::Result<(), String> {
     SERVICE_TABLE
         .set(Mutex::new(ServiceEntry { name, runner }))

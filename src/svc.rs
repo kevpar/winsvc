@@ -25,11 +25,8 @@ impl Service {
         Service { config: config }
     }
 
-    pub fn run(&self) {
-        self.run_inner(
-            service_control::ServiceControlHandler::new(&self.config.registration.name).unwrap(),
-        )
-        .unwrap();
+    pub fn run(&self, handler: service_control::ServiceControlHandler) {
+        self.run_inner(handler).unwrap();
     }
 
     fn output_stream(config: &config::OutputStream) -> Result<std::process::Stdio> {
@@ -64,7 +61,8 @@ impl Service {
     // outer wrapper talks SCM concepts to SCM
     //   ServiceControlHandler provides a way to receive events as well as synchronously set service status
     // inner wrapper takes a ServiceControlHandler and provides a way to run some arbitrary code
-    // concrete implementation of inner wrapper uses this system to run a Windows service
+    // concrete implementation of inner wrapper uses this system to run the client console app
+    // actual "run a child console process" logic is separated into some sort of proc_runner module
 
     fn run_inner(&self, handler: service_control::ServiceControlHandler) -> Result<()> {
         let rx = handler.chan();
