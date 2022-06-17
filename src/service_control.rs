@@ -4,18 +4,12 @@ use std::ffi::OsString;
 use std::sync::Mutex;
 use std::time::Duration;
 use windows_service::define_windows_service;
+use windows_service::service::{ServiceControl, ServiceExitCode, ServiceStatus, ServiceType};
+use windows_service::service_control_handler::{ServiceControlHandlerResult, ServiceStatusHandle};
 use windows_service::service_dispatcher;
 
-type Result<T> = windows_service::Result<T>;
-type ServiceStatusHandle = windows_service::service_control_handler::ServiceStatusHandle;
-type ServiceControlHandlerResult =
-    windows_service::service_control_handler::ServiceControlHandlerResult;
-type ServiceControl = windows_service::service::ServiceControl;
-type ServiceControlAccept = windows_service::service::ServiceControlAccept;
-type ServiceState = windows_service::service::ServiceState;
-type ServiceStatus = windows_service::service::ServiceStatus;
-type ServiceType = windows_service::service::ServiceType;
-type ServiceExitCode = windows_service::service::ServiceExitCode;
+pub type ServiceControlAccept = windows_service::service::ServiceControlAccept;
+pub type ServiceState = windows_service::service::ServiceState;
 
 define_windows_service!(ffi_service_main, service_main);
 
@@ -61,7 +55,7 @@ pub struct ServiceControlHandler {
 }
 
 impl ServiceControlHandler {
-    pub fn new(name: &str) -> Result<Self> {
+    pub fn new(name: &str) -> windows_service::Result<Self> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let status_handle = windows_service::service_control_handler::register(name, move |sc| {
             Self::handle(&tx, sc)
@@ -80,7 +74,7 @@ impl ServiceControlHandler {
         &self,
         status: ServiceState,
         controls_accepted: ServiceControlAccept,
-    ) -> Result<()> {
+    ) -> windows_service::Result<()> {
         self.handle.set_service_status(ServiceStatus {
             service_type: ServiceType::OWN_PROCESS,
             current_state: status,

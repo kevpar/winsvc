@@ -13,8 +13,6 @@ use std::{
 // Maybe replace these with our own abstraction in the future.
 type Result<T> = windows_service::Result<T>;
 type Error = windows_service::Error;
-type ServiceControlAccept = windows_service::service::ServiceControlAccept;
-type ServiceState = windows_service::service::ServiceState;
 
 pub struct Service {
     config: config::Config,
@@ -98,19 +96,22 @@ impl Service {
             waiter_child.wait().unwrap();
             child_tx.send(()).unwrap();
         });
-        handler.update(ServiceState::Running, ServiceControlAccept::STOP)?;
+        handler.update(
+            service_control::ServiceState::Running,
+            service_control::ServiceControlAccept::STOP,
+        )?;
         loop {
             crossbeam_channel::select! {
                 recv(rx) -> msg => {
                     msg.unwrap();
                     println!("stop signal received");
-                    handler.update(ServiceState::StopPending, ServiceControlAccept::empty())?;
+                    handler.update(service_control::ServiceState::StopPending, service_control::ServiceControlAccept::empty())?;
                     child.kill().unwrap();
                 },
                 recv(child_rx) -> msg => {
                     msg.unwrap();
                     println!("child terminated");
-                    handler.update(ServiceState::Stopped, ServiceControlAccept::empty())?;
+                    handler.update(service_control::ServiceState::Stopped, service_control::ServiceControlAccept::empty())?;
                     return Ok(());
                 }
             }
