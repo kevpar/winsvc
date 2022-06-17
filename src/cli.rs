@@ -2,14 +2,10 @@ use crate::config;
 use crate::service_control;
 use crate::svc;
 use clap::Parser;
-use std::{ffi::OsString, fs, os::windows::io::AsRawHandle};
+use std::{fs, os::windows::io::AsRawHandle};
 use winapi::{
     shared::minwindef,
     um::{errhandlingapi, processenv, winbase},
-};
-use windows_service::{
-    service::{ServiceAccess, ServiceErrorControl, ServiceInfo, ServiceStartType, ServiceType},
-    service_manager::{ServiceManager, ServiceManagerAccess},
 };
 
 fn set_stdio(f: &std::fs::File) -> Result<(), minwindef::DWORD> {
@@ -67,29 +63,13 @@ fn read_config(path: &std::path::PathBuf) -> config::Config {
 }
 
 fn register_service(config: &config::Config, config_path: &std::path::PathBuf) {
-    let scm = ServiceManager::local_computer(
-        None::<&str>,
-        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    service_control::register(
+        &config.registration.name,
+        &config.registration.display_name,
+        config.registration.description.as_deref(),
+        config_path,
     )
     .unwrap();
-    let info = ServiceInfo {
-        name: OsString::from(&config.registration.name),
-        display_name: OsString::from(&config.registration.display_name),
-        service_type: ServiceType::OWN_PROCESS,
-        start_type: ServiceStartType::AutoStart,
-        error_control: ServiceErrorControl::Normal,
-        executable_path: std::env::current_exe().unwrap(),
-        launch_arguments: vec![OsString::from("run"), OsString::from(&config_path)],
-        dependencies: vec![],
-        account_name: None,
-        account_password: None,
-    };
-    let service = scm
-        .create_service(&info, ServiceAccess::CHANGE_CONFIG)
-        .unwrap();
-    if let Some(desc) = &config.registration.description {
-        service.set_description(desc).unwrap()
-    }
 }
 
 fn run_service(config: config::Config) {
@@ -102,7 +82,8 @@ fn run_service(config: config::Config) {
     println!("config: {:?}", config);
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
-    service_control::register_service(name, Box::new(move |handler| s.run(handler))).unwrap();
+    service_control::register_service(name, Box::new(move |handler| s.run(handler).unwrap()))
+        .unwrap();
     service_control::start_dispatch().unwrap();
 }
 

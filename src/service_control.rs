@@ -4,9 +4,13 @@ use std::ffi::OsString;
 use std::sync::Mutex;
 use std::time::Duration;
 use windows_service::define_windows_service;
-use windows_service::service::{ServiceControl, ServiceExitCode, ServiceStatus, ServiceType};
+use windows_service::service::{
+    ServiceAccess, ServiceControl, ServiceErrorControl, ServiceExitCode, ServiceInfo,
+    ServiceStartType, ServiceStatus, ServiceType,
+};
 use windows_service::service_control_handler::{ServiceControlHandlerResult, ServiceStatusHandle};
 use windows_service::service_dispatcher;
+use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
 pub type ServiceControlAccept = windows_service::service::ServiceControlAccept;
 pub type ServiceState = windows_service::service::ServiceState;
@@ -47,6 +51,35 @@ pub fn start_dispatch() -> std::result::Result<(), String> {
     let name = data.name.clone();
     service_dispatcher::start(name, ffi_service_main)
         .map_err(|_err| "Failed to start service dispatch".to_string())
+}
+
+pub fn register(
+    name: &str,
+    display_name: &str,
+    description: Option<&str>,
+    config_path: &std::path::PathBuf,
+) -> windows_service::Result<()> {
+    let scm = ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    )?;
+    let info = ServiceInfo {
+        name: OsString::from(name),
+        display_name: OsString::from(display_name),
+        service_type: ServiceType::OWN_PROCESS,
+        start_type: ServiceStartType::AutoStart,
+        error_control: ServiceErrorControl::Normal,
+        executable_path: std::env::current_exe().unwrap(),
+        launch_arguments: vec![OsString::from("run"), OsString::from(config_path)],
+        dependencies: vec![],
+        account_name: None,
+        account_password: None,
+    };
+    let service = scm.create_service(&info, ServiceAccess::CHANGE_CONFIG)?;
+    if let Some(desc) = description {
+        service.set_description(desc)?;
+    }
+    Ok(())
 }
 
 pub struct ServiceControlHandler {

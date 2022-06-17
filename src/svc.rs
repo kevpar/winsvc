@@ -23,10 +23,6 @@ impl Service {
         Service { config: config }
     }
 
-    pub fn run(&self, handler: service_control::ServiceControlHandler) {
-        self.run_inner(handler).unwrap();
-    }
-
     fn output_stream(config: &config::OutputStream) -> Result<std::process::Stdio> {
         match config {
             config::OutputStream::Null => Ok(std::process::Stdio::null()),
@@ -62,9 +58,7 @@ impl Service {
     // concrete implementation of inner wrapper uses this system to run the client console app
     // actual "run a child console process" logic is separated into some sort of proc_runner module
 
-    fn run_inner(&self, handler: service_control::ServiceControlHandler) -> Result<()> {
-        let rx = handler.chan();
-
+    pub fn run(&self, handler: service_control::ServiceControlHandler) -> Result<()> {
         let job = jobobjects::JobObject::new().map_err(|err| Error::Winapi(err))?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
         limits.set_kill_on_close();
@@ -102,7 +96,7 @@ impl Service {
         )?;
         loop {
             crossbeam_channel::select! {
-                recv(rx) -> msg => {
+                recv(handler.chan()) -> msg => {
                     msg.unwrap();
                     println!("stop signal received");
                     handler.update(service_control::ServiceState::StopPending, service_control::ServiceControlAccept::empty())?;
