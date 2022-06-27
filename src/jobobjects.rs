@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde_derive::{Deserialize, Serialize};
 use winapi::{
     shared::minwindef,
@@ -39,12 +40,12 @@ pub struct JobObject {
 }
 
 impl JobObject {
-    pub fn new() -> Result<Self, std::io::Error> {
+    pub fn new() -> Result<Self> {
         let handle = unsafe {
             jobapi2::CreateJobObjectW(0 as minwinbase::LPSECURITY_ATTRIBUTES, 0 as ntdef::LPCWSTR)
         };
         if handle == 0 as ntdef::HANDLE {
-            return Err(std::io::Error::last_os_error());
+            return Err(anyhow::Error::from(std::io::Error::last_os_error()));
         }
         Ok(JobObject { handle: handle })
     }

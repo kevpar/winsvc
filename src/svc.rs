@@ -2,17 +2,13 @@ use crate::config;
 use crate::jobobjects;
 use crate::service_control;
 
+use anyhow::Result;
 use shared_child::SharedChild;
 use std::{
     fs::{self, OpenOptions},
     process::Command,
     sync::Arc,
 };
-
-// windows_service type aliases.
-// Maybe replace these with our own abstraction in the future.
-type Result<T> = windows_service::Result<T>;
-type Error = windows_service::Error;
 
 pub struct Service {
     config: config::Config,
@@ -41,7 +37,7 @@ impl Service {
                         oo.truncate(true);
                     }
                 }
-                let f = oo.open(path).map_err(|err| Error::Winapi(err))?;
+                let f = oo.open(path)?;
                 Ok(Into::into(f))
             }
         }
@@ -59,7 +55,7 @@ impl Service {
     // actual "run a child console process" logic is separated into some sort of proc_runner module
 
     pub fn run(&self, handler: service_control::ServiceControlHandler) -> Result<()> {
-        let job = jobobjects::JobObject::new().map_err(|err| Error::Winapi(err))?;
+        let job = jobobjects::JobObject::new()?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
         limits.set_kill_on_close();
         if let Some(job_object_config) = &self.config.job_object {
@@ -67,21 +63,20 @@ impl Service {
                 limits.set_priority_class(*class);
             }
         }
-        job.set_extended_limits(limits)
-            .map_err(|err| Error::Winapi(err))?;
-        job.add_self().map_err(|err| Error::Winapi(err))?;
+        job.set_extended_limits(limits)?;
+        job.add_self()?;
 
         let mut c = Command::new(&self.config.process.binary);
         c.args(&self.config.process.args);
         c.envs(&self.config.process.environment);
         if let Some(wd) = &self.config.process.working_directory {
-            fs::create_dir_all(wd).map_err(|err| Error::Winapi(err))?;
+            fs::create_dir_all(wd)?;
             c.current_dir(wd);
         }
         c.stdout(Service::output_stream(&self.config.process.stdout)?);
         c.stderr(Service::output_stream(&self.config.process.stderr)?);
 
-        let child = SharedChild::spawn(&mut c).map_err(|err| Error::Winapi(err))?;
+        let child = SharedChild::spawn(&mut c)?;
         let child = Arc::new(child);
         let waiter_child = child.clone();
         println!("child started with pid {}", child.id());

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use once_cell::sync::OnceCell;
 use std::boxed::Box;
 use std::ffi::OsString;
@@ -35,22 +36,22 @@ fn service_main(_args: Vec<OsString>) {
 pub fn register_service(
     name: String,
     runner: Box<dyn Fn(ServiceControlHandler) + Send>,
-) -> std::result::Result<(), String> {
+) -> Result<()> {
     SERVICE_TABLE
         .set(Mutex::new(ServiceEntry { name, runner }))
-        .map_err(|_err| "Failed to register service".to_string())?;
+        .map_err(|_e| anyhow::anyhow!("Failed to register service"))?;
     Ok(())
 }
 
-pub fn start_dispatch() -> std::result::Result<(), String> {
+pub fn start_dispatch() -> Result<()> {
     let data = SERVICE_TABLE
         .get()
-        .ok_or("No service registered yet".to_string())?
+        .ok_or(anyhow::anyhow!("No service registered yet"))?
         .lock()
-        .map_err(|_err| "Failed to lock service entry".to_string())?;
+        .map_err(|_e| anyhow::anyhow!("Failed to lock service entry"))?;
     let name = data.name.clone();
     service_dispatcher::start(name, ffi_service_main)
-        .map_err(|_err| "Failed to start service dispatch".to_string())
+        .map_err(|_e| anyhow::anyhow!("Failed to start service dispatch"))
 }
 
 pub fn register(
@@ -58,7 +59,7 @@ pub fn register(
     display_name: &str,
     description: Option<&str>,
     config_path: &std::path::PathBuf,
-) -> windows_service::Result<()> {
+) -> Result<()> {
     let scm = ServiceManager::local_computer(
         None::<&str>,
         ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
@@ -88,7 +89,7 @@ pub struct ServiceControlHandler {
 }
 
 impl ServiceControlHandler {
-    pub fn new(name: &str) -> windows_service::Result<Self> {
+    pub fn new(name: &str) -> Result<Self> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let status_handle = windows_service::service_control_handler::register(name, move |sc| {
             Self::handle(&tx, sc)
@@ -107,7 +108,7 @@ impl ServiceControlHandler {
         &self,
         status: ServiceState,
         controls_accepted: ServiceControlAccept,
-    ) -> windows_service::Result<()> {
+    ) -> Result<()> {
         self.handle.set_service_status(ServiceStatus {
             service_type: ServiceType::OWN_PROCESS,
             current_state: status,
@@ -116,7 +117,8 @@ impl ServiceControlHandler {
             checkpoint: 0,
             wait_hint: Duration::default(),
             process_id: None,
-        })
+        })?;
+        Ok(())
     }
 
     fn handle(
