@@ -3,24 +3,7 @@ use crate::service_control;
 use crate::svc;
 use anyhow::Result;
 use clap::Parser;
-use std::{fs, os::windows::io::AsRawHandle};
-use winapi::{
-    shared::minwindef,
-    um::{errhandlingapi, processenv, winbase},
-};
-
-fn set_stdio(f: &std::fs::File) -> Result<(), minwindef::DWORD> {
-    let h = f.as_raw_handle();
-    unsafe {
-        if processenv::SetStdHandle(winbase::STD_OUTPUT_HANDLE, h) == 0 {
-            return Err(errhandlingapi::GetLastError());
-        }
-        if processenv::SetStdHandle(winbase::STD_ERROR_HANDLE, h) == 0 {
-            return Err(errhandlingapi::GetLastError());
-        }
-    }
-    Ok(())
-}
+use std::fs;
 
 #[derive(clap::Parser)]
 #[clap(author, version, about)]
@@ -46,10 +29,6 @@ enum Command {
         #[clap(subcommand)]
         command: ConfigCommand,
     },
-    // TODO diag
-    // inspect (see child pid etc)
-    // something with sd notify protocol?
-    // rotate logs?
 }
 
 #[derive(clap::Subcommand)]
@@ -72,17 +51,19 @@ fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -
 }
 
 fn run_service(config: config::Config) -> Result<()> {
-    if let Some(winsvc_config) = &config.winsvc {
-        if let Some(path) = &winsvc_config.log_path {
-            let f = fs::File::create(path)?;
-            set_stdio(&f).expect("failed to set stdio");
-        }
-    }
-    println!("config: {:?}", config);
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
     service_control::register_service(name, Box::new(move |handler| s.run(handler).unwrap()))?;
     service_control::start_dispatch()
+}
+
+fn setup_logging(config: &config::Config) -> Result<()> {
+    if let Some(log_sink) = &config.winsvc.log_sink {
+        match log_sink {
+            config::LogSink::EventLog => eventlog::init("Application", log::Level::Trace)?,
+        }
+    }
+    Ok(())
 }
 
 pub fn run() {
@@ -91,10 +72,22 @@ pub fn run() {
     match cli.command {
         Command::Register { config } => {
             let c = read_config(&config).expect("failed reading config");
+            setup_logging(&c).expect("failed to setup logging");
+            log::debug!(
+                "registering service {} with config {}",
+                c.registration.name,
+                config.display()
+            );
             register_service(&c, &config).expect("failed to register service");
         }
         Command::Run { config } => {
             let c = read_config(&config).expect("failed reading config");
+            setup_logging(&c).expect("failed to setup logging");
+            log::debug!(
+                "running service {} with config {}",
+                c.registration.name,
+                config.display()
+            );
             run_service(c).expect("failed to run service");
         }
         Command::Config { command } => match command {

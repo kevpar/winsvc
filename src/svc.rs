@@ -79,7 +79,7 @@ impl Service {
         let child = SharedChild::spawn(&mut c)?;
         let child = Arc::new(child);
         let waiter_child = child.clone();
-        println!("child started with pid {}", child.id());
+        log::debug!("child started with pid {}", child.id());
         let (child_tx, child_rx) = crossbeam_channel::bounded(0);
         let _t = std::thread::spawn(move || {
             waiter_child.wait().unwrap();
@@ -93,13 +93,13 @@ impl Service {
             crossbeam_channel::select! {
                 recv(handler.chan()) -> msg => {
                     msg.unwrap();
-                    println!("stop signal received");
+                    log::debug!("stop signal received");
                     handler.update(service_control::ServiceState::StopPending, service_control::ServiceControlAccept::empty())?;
                     child.kill().unwrap();
                 },
                 recv(child_rx) -> msg => {
                     msg.unwrap();
-                    println!("child terminated");
+                    log::debug!("child terminated");
                     handler.update(service_control::ServiceState::Stopped, service_control::ServiceControlAccept::empty())?;
                     return Ok(());
                 }

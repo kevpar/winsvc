@@ -60,9 +60,14 @@ pub struct Process {
     pub stderr: OutputStream,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+pub enum LogSink {
+    EventLog,
+}
+
 #[derive(Debug, Deserialize, Default, Serialize)]
 pub struct WinSvc {
-    pub log_path: Option<PathBuf>,
+    pub log_sink: Option<LogSink>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -91,15 +96,9 @@ pub struct RestartBehavior {
 
 #[derive(Deserialize, Debug, Default, Serialize)]
 pub struct Config {
-    pub winsvc: Option<WinSvc>,
+    pub winsvc: WinSvc,
     pub registration: Registration,
     pub process: Process,
     pub job_object: Option<JobObject>,
     pub restart: Option<RestartBehavior>,
-    // config relative to winsvc path
-    // user binary relative to config path
-    // pid file
-    // logging
-    // console creation
-    // sd notify protocol
 }
