@@ -35,6 +35,11 @@ enum Command {
 enum ConfigCommand {
     #[clap(about = "Output a config file with default settings")]
     Default,
+    #[clap(about = "Check a config file for errors")]
+    Check {
+        #[clap(help = "Path to the service config file")]
+        config: std::path::PathBuf,
+    },
 }
 
 fn read_config(path: &std::path::PathBuf) -> Result<config::Config> {
@@ -94,6 +99,9 @@ pub fn run() {
             ConfigCommand::Default => {
                 let c = config::Config::default();
                 println!("{}", toml::to_string(&c).unwrap());
+            }
+            ConfigCommand::Check { config } => {
+                read_config(&config).expect("failed reading config");
             }
         },
     }
