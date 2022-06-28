@@ -1,6 +1,7 @@
 use crate::config;
 use crate::service_control;
 use crate::svc;
+use anyhow::Result;
 use clap::Parser;
 use std::{fs, os::windows::io::AsRawHandle};
 use winapi::{
@@ -57,34 +58,31 @@ enum ConfigCommand {
     Default,
 }
 
-fn read_config(path: &std::path::PathBuf) -> config::Config {
-    toml::from_str(&fs::read_to_string(path).expect("failed to read config file"))
-        .expect("failed to parse config file")
+fn read_config(path: &std::path::PathBuf) -> Result<config::Config> {
+    toml::from_str::<config::Config>(&fs::read_to_string(path)?).map_err(anyhow::Error::from)
 }
 
-fn register_service(config: &config::Config, config_path: &std::path::PathBuf) {
+fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -> Result<()> {
     service_control::register(
         &config.registration.name,
         &config.registration.display_name,
         config.registration.description.as_deref(),
         config_path,
     )
-    .unwrap();
 }
 
-fn run_service(config: config::Config) {
+fn run_service(config: config::Config) -> Result<()> {
     if let Some(winsvc_config) = &config.winsvc {
         if let Some(path) = &winsvc_config.log_path {
-            let f = fs::File::create(path).expect("failed to open log file");
+            let f = fs::File::create(path)?;
             set_stdio(&f).expect("failed to set stdio");
         }
     }
     println!("config: {:?}", config);
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
-    service_control::register_service(name, Box::new(move |handler| s.run(handler).unwrap()))
-        .unwrap();
-    service_control::start_dispatch().unwrap();
+    service_control::register_service(name, Box::new(move |handler| s.run(handler).unwrap()))?;
+    service_control::start_dispatch()
 }
 
 pub fn run() {
@@ -92,12 +90,12 @@ pub fn run() {
 
     match cli.command {
         Command::Register { config } => {
-            let c = read_config(&config);
-            register_service(&c, &config);
+            let c = read_config(&config).expect("failed reading config");
+            register_service(&c, &config).expect("failed to register service");
         }
         Command::Run { config } => {
-            let c = read_config(&config);
-            run_service(c);
+            let c = read_config(&config).expect("failed reading config");
+            run_service(c).expect("failed to run service");
         }
         Command::Config { command } => match command {
             ConfigCommand::Default => {

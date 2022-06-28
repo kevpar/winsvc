@@ -39,19 +39,19 @@ pub fn register_service(
 ) -> Result<()> {
     SERVICE_TABLE
         .set(Mutex::new(ServiceEntry { name, runner }))
-        .map_err(|_e| anyhow::anyhow!("Failed to register service"))?;
+        .map_err(|_e| anyhow::anyhow!("a service was already registered in the singleton"))?;
     Ok(())
 }
 
 pub fn start_dispatch() -> Result<()> {
-    let data = SERVICE_TABLE
+    let name = SERVICE_TABLE
         .get()
-        .ok_or(anyhow::anyhow!("No service registered yet"))?
+        .ok_or(anyhow::anyhow!("no service registered yet"))?
         .lock()
-        .map_err(|_e| anyhow::anyhow!("Failed to lock service entry"))?;
-    let name = data.name.clone();
-    service_dispatcher::start(name, ffi_service_main)
-        .map_err(|_e| anyhow::anyhow!("Failed to start service dispatch"))
+        .unwrap()
+        .name
+        .clone();
+    service_dispatcher::start(name, ffi_service_main).map_err(anyhow::Error::from)
 }
 
 pub fn register(
@@ -70,7 +70,7 @@ pub fn register(
         service_type: ServiceType::OWN_PROCESS,
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
-        executable_path: std::env::current_exe().unwrap(),
+        executable_path: std::env::current_exe()?,
         launch_arguments: vec![OsString::from("run"), OsString::from(config_path)],
         dependencies: vec![],
         account_name: None,
