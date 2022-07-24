@@ -18,9 +18,15 @@ pub type ServiceState = windows_service::service::ServiceState;
 
 define_windows_service!(ffi_service_main, service_main);
 
-struct ServiceEntry {
+pub struct ServiceEntry {
     name: String,
     runner: Box<dyn Fn(ServiceControlHandler) + Send>,
+}
+
+impl ServiceEntry {
+    pub fn new(name: String, runner: Box<dyn Fn(ServiceControlHandler) + Send>) -> Self {
+        ServiceEntry { name, runner }
+    }
 }
 
 /// Stores the global information needed to run the service.
@@ -33,24 +39,15 @@ fn service_main(_args: Vec<OsString>) {
     (s.runner)(handler);
 }
 
-pub fn register_service(
-    name: String,
-    runner: Box<dyn Fn(ServiceControlHandler) + Send>,
-) -> Result<()> {
+pub fn start(mut services: Vec<ServiceEntry>) -> Result<()> {
+    if services.len() != 1 {
+        return Err(anyhow::anyhow!("service table must contain a single entry"));
+    }
+    let service_entry = services.pop().unwrap();
+    let name = service_entry.name.clone();
     SERVICE_TABLE
-        .set(Mutex::new(ServiceEntry { name, runner }))
-        .map_err(|_e| anyhow::anyhow!("a service was already registered in the singleton"))?;
-    Ok(())
-}
-
-pub fn start_dispatch() -> Result<()> {
-    let name = SERVICE_TABLE
-        .get()
-        .ok_or(anyhow::anyhow!("no service registered yet"))?
-        .lock()
-        .unwrap()
-        .name
-        .clone();
+        .set(Mutex::new(service_entry))
+        .map_err(|_e| anyhow::anyhow!("a service has already been started"))?;
     service_dispatcher::start(name, ffi_service_main).map_err(anyhow::Error::from)
 }
 

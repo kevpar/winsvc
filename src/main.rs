@@ -60,8 +60,10 @@ fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -
 fn run_service(config: config::Config) -> Result<()> {
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
-    service_control::register_service(name, Box::new(move |handler| s.run(handler).unwrap()))?;
-    service_control::start_dispatch()
+    service_control::start(vec![service_control::ServiceEntry::new(
+        name,
+        Box::new(move |handler| s.run(handler).unwrap()),
+    )])
 }
 
 fn setup_logging(config: &config::Config) -> Result<()> {
