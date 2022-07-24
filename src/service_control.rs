@@ -80,6 +80,16 @@ pub fn register(
     Ok(())
 }
 
+pub fn unregister(name: &str) -> Result<()> {
+    let scm = ServiceManager::local_computer(
+        None::<&str>,
+        ServiceManagerAccess::CONNECT | ServiceManagerAccess::CREATE_SERVICE,
+    )?;
+    let service = scm.open_service(name, ServiceAccess::DELETE)?;
+    service.delete()?;
+    Ok(())
+}
+
 pub struct ServiceControlHandler {
     rx: crossbeam_channel::Receiver<()>,
     handle: ServiceStatusHandle,

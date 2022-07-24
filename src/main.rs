@@ -21,6 +21,11 @@ enum Command {
         #[clap(help = "Path to the service config file")]
         config: std::path::PathBuf,
     },
+    #[clap(about = "Unregister a service")]
+    Unregister {
+        #[clap(help = "Path to the service config file")]
+        config: std::path::PathBuf,
+    },
     #[clap(about = "Run a service", hide = true)]
     Run {
         #[clap(help = "Path to the service config file")]
@@ -57,6 +62,10 @@ fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -
     )
 }
 
+fn unregister_service(config: &config::Config) -> Result<()> {
+    service_control::unregister(&config.registration.name)
+}
+
 fn run_service(config: config::Config) -> Result<()> {
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
@@ -88,6 +97,16 @@ fn main() {
                 config.display()
             );
             register_service(&c, &config).expect("failed to register service");
+        }
+        Command::Unregister { config } => {
+            let c = read_config(&config).expect("failed reading config");
+            setup_logging(&c).expect("failed to setup logging");
+            log::debug!(
+                "unregistering service {} with config {}",
+                c.registration.name,
+                config.display()
+            );
+            unregister_service(&c).expect("failed to unregister service");
         }
         Command::Run { config } => {
             let c = read_config(&config).expect("failed reading config");
