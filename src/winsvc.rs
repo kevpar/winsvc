@@ -1,3 +1,5 @@
+use crate::gensvc;
+
 use anyhow::Result;
 use once_cell::sync::OnceCell;
 use std::boxed::Box;
@@ -13,18 +15,15 @@ use windows_service::service_control_handler::{ServiceControlHandlerResult, Serv
 use windows_service::service_dispatcher;
 use windows_service::service_manager::{ServiceManager, ServiceManagerAccess};
 
-pub type ServiceControlAccept = windows_service::service::ServiceControlAccept;
-pub type ServiceState = windows_service::service::ServiceState;
-
 define_windows_service!(ffi_service_main, service_main);
 
 pub struct ServiceEntry {
     name: String,
-    runner: Box<dyn Fn(ServiceControlHandler) + Send>,
+    runner: Box<dyn Fn(Box<dyn gensvc::Handler>) + Send>,
 }
 
 impl ServiceEntry {
-    pub fn new(name: String, runner: Box<dyn Fn(ServiceControlHandler) + Send>) -> Self {
+    pub fn new(name: String, runner: Box<dyn Fn(Box<dyn gensvc::Handler>) + Send>) -> Self {
         ServiceEntry { name, runner }
     }
 }
@@ -36,7 +35,7 @@ static SERVICE_TABLE: OnceCell<Mutex<ServiceEntry>> = OnceCell::new();
 fn service_main(_args: Vec<OsString>) {
     let s = SERVICE_TABLE.get().unwrap().lock().unwrap();
     let handler = ServiceControlHandler::new(&s.name).unwrap();
-    (s.runner)(handler);
+    (s.runner)(Box::new(handler));
 }
 
 pub fn start(mut services: Vec<ServiceEntry>) -> Result<()> {
@@ -90,13 +89,13 @@ pub fn unregister(name: &str) -> Result<()> {
     Ok(())
 }
 
-pub struct ServiceControlHandler {
+struct ServiceControlHandler {
     rx: crossbeam_channel::Receiver<()>,
     handle: ServiceStatusHandle,
 }
 
 impl ServiceControlHandler {
-    pub fn new(name: &str) -> Result<Self> {
+    fn new(name: &str) -> Result<Self> {
         let (tx, rx) = crossbeam_channel::bounded(0);
         let status_handle = windows_service::service_control_handler::register(name, move |sc| {
             Self::handle(&tx, sc)
@@ -105,27 +104,6 @@ impl ServiceControlHandler {
             rx,
             handle: status_handle,
         })
-    }
-
-    pub fn chan(&self) -> &crossbeam_channel::Receiver<()> {
-        &self.rx
-    }
-
-    pub fn update(
-        &self,
-        status: ServiceState,
-        controls_accepted: ServiceControlAccept,
-    ) -> Result<()> {
-        self.handle.set_service_status(ServiceStatus {
-            service_type: ServiceType::OWN_PROCESS,
-            current_state: status,
-            controls_accepted: controls_accepted,
-            exit_code: ServiceExitCode::Win32(0),
-            checkpoint: 0,
-            wait_hint: Duration::default(),
-            process_id: None,
-        })?;
-        Ok(())
     }
 
     fn handle(
@@ -140,5 +118,28 @@ impl ServiceControlHandler {
             }
             _ => ServiceControlHandlerResult::NotImplemented,
         }
+    }
+}
+
+impl gensvc::Handler for ServiceControlHandler {
+    fn chan(&self) -> &crossbeam_channel::Receiver<()> {
+        &self.rx
+    }
+
+    fn update(
+        &self,
+        status: gensvc::ServiceState,
+        controls_accepted: gensvc::ServiceControlAccept,
+    ) -> Result<()> {
+        self.handle.set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: status,
+            controls_accepted: controls_accepted,
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: Duration::default(),
+            process_id: None,
+        })?;
+        Ok(())
     }
 }

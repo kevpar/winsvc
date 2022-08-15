@@ -1,6 +1,6 @@
 use crate::config;
+use crate::gensvc;
 use crate::jobobjects;
-use crate::service_control;
 
 use anyhow::Result;
 use shared_child::SharedChild;
@@ -44,7 +44,6 @@ impl Service {
     }
 
     // TODO remove notes
-    // service_control (winsvc?) provides all special bindings to tie to SCM
     // svc provides core concept of a runnable service, receives some abstraction over control handling and setting service status
     //   should be something we can pull out and test with a mock SCM
     //
@@ -54,7 +53,7 @@ impl Service {
     // concrete implementation of inner wrapper uses this system to run the client console app
     // actual "run a child console process" logic is separated into some sort of proc_runner module
 
-    pub fn run(&self, handler: service_control::ServiceControlHandler) -> Result<()> {
+    pub fn run(&self, handler: Box<dyn gensvc::Handler>) -> Result<()> {
         let job = jobobjects::JobObject::new()?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
         limits.set_kill_on_close();
@@ -86,21 +85,21 @@ impl Service {
             child_tx.send(()).unwrap();
         });
         handler.update(
-            service_control::ServiceState::Running,
-            service_control::ServiceControlAccept::STOP,
+            gensvc::ServiceState::Running,
+            gensvc::ServiceControlAccept::STOP,
         )?;
         loop {
             crossbeam_channel::select! {
                 recv(handler.chan()) -> msg => {
                     msg.unwrap();
                     log::debug!("stop signal received");
-                    handler.update(service_control::ServiceState::StopPending, service_control::ServiceControlAccept::empty())?;
+                    handler.update(gensvc::ServiceState::StopPending, gensvc::ServiceControlAccept::empty())?;
                     child.kill().unwrap();
                 },
                 recv(child_rx) -> msg => {
                     msg.unwrap();
                     log::debug!("child terminated");
-                    handler.update(service_control::ServiceState::Stopped, service_control::ServiceControlAccept::empty())?;
+                    handler.update(gensvc::ServiceState::Stopped, gensvc::ServiceControlAccept::empty())?;
                     return Ok(());
                 }
             }

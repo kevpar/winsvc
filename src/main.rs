@@ -1,7 +1,8 @@
 mod config;
+mod gensvc;
 mod jobobjects;
-mod service_control;
 mod svc;
+mod winsvc;
 
 use anyhow::Result;
 use clap::Parser;
@@ -54,7 +55,7 @@ fn read_config(path: &std::path::PathBuf) -> Result<config::Config> {
 }
 
 fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -> Result<()> {
-    service_control::register(
+    winsvc::register(
         &config.registration.name,
         &config.registration.display_name,
         config.registration.description.as_deref(),
@@ -63,13 +64,13 @@ fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -
 }
 
 fn unregister_service(config: &config::Config) -> Result<()> {
-    service_control::unregister(&config.registration.name)
+    winsvc::unregister(&config.registration.name)
 }
 
 fn run_service(config: config::Config) -> Result<()> {
     let name = config.registration.name.clone();
     let s = svc::Service::new(config);
-    service_control::start(vec![service_control::ServiceEntry::new(
+    winsvc::start(vec![winsvc::ServiceEntry::new(
         name,
         Box::new(move |handler| s.run(handler).unwrap()),
     )])
