@@ -6,7 +6,7 @@ mod winsvc;
 
 use anyhow::Result;
 use clap::Parser;
-use std::fs;
+use std::{ffi::OsString, fs};
 
 #[derive(clap::Parser)]
 #[clap(author, version, about)]
@@ -59,7 +59,8 @@ fn register_service(config: &config::Config, config_path: &std::path::PathBuf) -
         &config.registration.name,
         &config.registration.display_name,
         config.registration.description.as_deref(),
-        config_path,
+        std::env::current_exe()?,
+        vec![OsString::from("run"), OsString::from(config_path)],
     )
 }
 

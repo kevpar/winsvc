@@ -54,7 +54,8 @@ pub fn register(
     name: &str,
     display_name: &str,
     description: Option<&str>,
-    config_path: &std::path::PathBuf,
+    exe: std::path::PathBuf,
+    args: Vec<OsString>,
 ) -> Result<()> {
     let scm = ServiceManager::local_computer(
         None::<&str>,
@@ -66,8 +67,8 @@ pub fn register(
         service_type: ServiceType::OWN_PROCESS,
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
-        executable_path: std::env::current_exe()?,
-        launch_arguments: vec![OsString::from("run"), OsString::from(config_path)],
+        executable_path: exe,
+        launch_arguments: args,
         dependencies: vec![],
         account_name: None,
         account_password: None,

@@ -43,16 +43,6 @@ impl Service {
         }
     }
 
-    // TODO remove notes
-    // svc provides core concept of a runnable service, receives some abstraction over control handling and setting service status
-    //   should be something we can pull out and test with a mock SCM
-    //
-    // outer wrapper talks SCM concepts to SCM
-    //   ServiceControlHandler provides a way to receive events as well as synchronously set service status
-    // inner wrapper takes a ServiceControlHandler and provides a way to run some arbitrary code
-    // concrete implementation of inner wrapper uses this system to run the client console app
-    // actual "run a child console process" logic is separated into some sort of proc_runner module
-
     pub fn run(&self, handler: Box<dyn gensvc::Handler>) -> Result<()> {
         let job = jobobjects::JobObject::new()?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
