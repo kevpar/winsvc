@@ -1,0 +1,18 @@
+[winsvc]
+log_sink = "EventLog"
+
+[registration]
+name = "mysvc"
+display_name = ""
+
+[process]
+binary = ""
+args = []
+
+[process.environment]
+
+[process.stdout]
+type = "Null"
+
+[process.stderr]
+type = "Null"

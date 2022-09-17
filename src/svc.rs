@@ -43,7 +43,39 @@ impl Service {
         }
     }
 
+    // "normal" mode
+    //   Starting -> start process -> Running
+    //   Running -> process exits -> Exited
+    //   Running -> stop request -> send ctrl signal -> Exiting
+    //   Exiting -> exited -> Exited
+    //   Exiting -> timeout -> force kill -> Exited
+    // sdnotify mode
+    //   Starting -> start process -> ready signal -> Running
+    //
+
+    // p = start_process()
+    // wait1 = wait_process(p)
+    // wait2 = get_stop_signal()
+    // waits = [wait1, wait2]
+    // loop:
+    // switch wait(waits)
+    //   case wait1
+    //     set_state(stopped)
+    //     exit
+    //   case wait2
+    //     set_state(stopping)
+    //     terminate_process(p)
+    //     t = set_timer()
+    //     waits = [wait1, t]
+    //     goto loop
+    //   case t
+    //     kill_process(p)
+
     pub fn run(&self, handler: Box<dyn gensvc::Handler>) -> Result<()> {
+        handler.update(
+            gensvc::ServiceState::StartPending,
+            gensvc::ServiceControlAccept::empty(),
+        )?;
         let job = jobobjects::JobObject::new()?;
         let mut limits = jobobjects::ExtendedLimitInformation::new();
         limits.set_kill_on_close();
@@ -81,10 +113,15 @@ impl Service {
         loop {
             crossbeam_channel::select! {
                 recv(handler.chan()) -> msg => {
-                    msg.unwrap();
-                    log::debug!("stop signal received");
-                    handler.update(gensvc::ServiceState::StopPending, gensvc::ServiceControlAccept::empty())?;
-                    child.kill().unwrap();
+                    let sc = msg.unwrap();
+                    match sc {
+                        gensvc::ServiceControl::Stop => {
+                            log::debug!("stop signal received");
+                            handler.update(gensvc::ServiceState::StopPending, gensvc::ServiceControlAccept::empty())?;
+                            child.kill().unwrap();
+                        }
+                        _ => ()
+                    }
                 },
                 recv(child_rx) -> msg => {
                     msg.unwrap();

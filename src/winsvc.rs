@@ -91,13 +91,13 @@ pub fn unregister(name: &str) -> Result<()> {
 }
 
 struct ServiceControlHandler {
-    rx: crossbeam_channel::Receiver<()>,
+    rx: crossbeam_channel::Receiver<gensvc::ServiceControl>,
     handle: ServiceStatusHandle,
 }
 
 impl ServiceControlHandler {
     fn new(name: &str) -> Result<Self> {
-        let (tx, rx) = crossbeam_channel::bounded(0);
+        let (tx, rx) = crossbeam_channel::bounded::<gensvc::ServiceControl>(0);
         let status_handle = windows_service::service_control_handler::register(name, move |sc| {
             Self::handle(&tx, sc)
         })?;
@@ -108,13 +108,13 @@ impl ServiceControlHandler {
     }
 
     fn handle(
-        tx: &crossbeam_channel::Sender<()>,
+        tx: &crossbeam_channel::Sender<gensvc::ServiceControl>,
         sc: ServiceControl,
     ) -> ServiceControlHandlerResult {
         match sc {
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-            ServiceControl::Stop => {
-                tx.send(()).unwrap();
+            ServiceControl::Stop | ServiceControl::Shutdown => {
+                tx.send(sc).unwrap();
                 ServiceControlHandlerResult::NoError
             }
             _ => ServiceControlHandlerResult::NotImplemented,
@@ -123,7 +123,7 @@ impl ServiceControlHandler {
 }
 
 impl gensvc::Handler for ServiceControlHandler {
-    fn chan(&self) -> &crossbeam_channel::Receiver<()> {
+    fn chan(&self) -> &crossbeam_channel::Receiver<gensvc::ServiceControl> {
         &self.rx
     }
 
